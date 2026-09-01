@@ -53,6 +53,6 @@ async def phone_to_qr(message: Message, state: FSMContext) -> None:
 @router.message(StateFilter(QrFlow.waiting_phone))
 async def not_text(message: Message) -> None:
     await message.reply(
-        "Please send the phone number as text (e.g. <code>09960476738</code>).",
+        "Please send the phone number as text (e.g. <code>09***6738</code>).",
         reply_markup=provider_keyboard(),
     )

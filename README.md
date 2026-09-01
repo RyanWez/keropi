@@ -103,7 +103,7 @@ Logs will be streamed to the console and automatically saved to `bot.log` (with 
 
 1. Open your Telegram bot and send `/start`.
 2. Click **KBZ Pay** or **WavePay**.
-3. Send a test Myanmar phone number: `09960476738`
+3. Send a test Myanmar phone number: `09***6738` (e.g. `09xxxxxxxxx`)
 4. The bot will quote-reply with the custom branded QR image.
 5. Scan the QR code with the respective app to verify recipient details.
 

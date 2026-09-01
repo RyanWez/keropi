@@ -12,12 +12,12 @@ ASK_PHONE = {
     "kbzpay": (
         "📱 <b>KBZ Pay</b> selected.\n\n"
         "Now send the customer's phone number "
-        "(e.g. <code>09960476738</code>) and I'll return the QR."
+        "(e.g. <code>09***6738</code>) and I'll return the QR."
     ),
     "wavepay": (
         "📱 <b>WavePay</b> selected.\n\n"
         "Now send the customer's phone number "
-        "(e.g. <code>09960476738</code>) and I'll return the QR."
+        "(e.g. <code>09***6738</code>) and I'll return the QR."
     ),
 }
 

@@ -15,11 +15,11 @@ def validate(raw: str) -> tuple[str | None, str | None]:
     """Return (phone, error). Exactly one of the two is not None."""
     phone = normalize(raw)
     if not phone.isdigit():
-        return None, "Numbers only, please. Example: 09960476738"
+        return None, "Numbers only, please. Example: 09***6738"
     if phone.startswith("+95") or phone.startswith("95"):
         return None, "Drop the country code — start with 09."
     if not phone.startswith("09"):
-        return None, "Myanmar mobile numbers start with 09. Example: 09960476738"
+        return None, "Myanmar mobile numbers start with 09. Example: 09***6738"
     if not _PHONE_RE.match(phone):
         return None, "That does not look right. Use 09 followed by 8–9 digits (10–11 digits total)."
     return phone, None
