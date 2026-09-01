@@ -1,0 +1,4 @@
+aiogram>=3.13
+qrcode>=7.4
+pillow>=10.0
+python-dotenv>=1.0

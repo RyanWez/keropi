@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="KBZPay ငွေလက်ခံ QR ဖွဲ့စည်းပုံ — APK reverse engineering မှတ်တမ်း">
+<title>KBZPay QR ဖွဲ့စည်းပုံ — Reverse Engineering မှတ်တမ်း</title>
+<style>
+/* ---------- အရောင်နဲ့ စာလုံး ---------- */
+:root{
+  --bg:#0a0e14; --card:#111823; --card2:#0e141d;
+  --border:#1e2937; --border2:#2a3a4d;
+  --text:#d9e3ee; --muted:#93a5b7; --faint:#5d7085;
+  --red:#ff5d5d; --red-dim:#e5484d;
+  --cyan:#53c1f5; --green:#43d17c; --amber:#f5b04a; --purple:#b78cf7; --slate:#8fa7bd;
+  --mono: ui-monospace,"SF Mono","Cascadia Mono",Consolas,"JetBrains Mono","Noto Sans Myanmar","Myanmar Text","Padauk",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; color:var(--text); font-size:16.5px; line-height:2;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Myanmar","Myanmar Text","Padauk","Myanmar Sangam MN",sans-serif;
+  background:
+    radial-gradient(1100px 520px at 85% -5%, rgba(229,72,77,.11), transparent 60%),
+    radial-gradient(900px 480px at -10% 14%, rgba(83,193,245,.07), transparent 55%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+::selection{background:rgba(229,72,77,.38);color:#fff}
+a{color:var(--cyan)}
+b,strong{color:#eaf2fa}
+code{
+  font-family:var(--mono); font-size:.85em; color:#9ecbff;
+  background:rgba(83,193,245,.1); border:1px solid rgba(83,193,245,.22);
+  padding:1px 6px; border-radius:6px; word-break:break-all;
+}
+.mono{font-family:var(--mono)}
+.wrap{max-width:940px; margin:0 auto; padding:0 22px 90px}
+
+/* ---------- အပေါ်နာဗား ---------- */
+.topnav{position:sticky; top:0; z-index:60; background:rgba(10,14,20,.86);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border)}
+.topnav .inner{max-width:940px; margin:0 auto; padding:10px 22px; display:flex; align-items:center; gap:4px; overflow-x:auto; scrollbar-width:none}
+.topnav .inner::-webkit-scrollbar{display:none}
+.brand{font-weight:800; color:#fff; font-size:14px; white-space:nowrap; margin-right:12px; display:flex; align-items:center; gap:8px}
+.brand .dot{width:9px; height:9px; border-radius:3px; background:linear-gradient(135deg,var(--red-dim),#ff9a9a); box-shadow:0 0 12px rgba(229,72,77,.9)}
+.topnav a{color:var(--muted); text-decoration:none; font-size:13.5px; padding:4px 11px; border-radius:8px; white-space:nowrap}
+.topnav a:hover{color:#fff; background:rgba(255,255,255,.06)}
+.topnav a b{font-weight:600; color:var(--red); margin-right:4px}
+
+/* ---------- Hero ---------- */
+.hero{padding:56px 0 6px}
+.hero-grid{display:grid; grid-template-columns:1fr auto; gap:38px; align-items:center}
+.eyebrow{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.eyebrow .tag{font-family:var(--mono); font-size:11.5px; letter-spacing:.22em; color:var(--red); font-weight:700}
+.eyebrow .pill{font-size:11.5px; color:#7ce2a8; border:1px solid rgba(67,209,124,.4); background:rgba(67,209,124,.08); border-radius:999px; padding:1px 11px; font-family:var(--mono)}
+h1{margin:14px 0 0; font-size:clamp(27px,4.6vw,38px); font-weight:800; color:#fff; line-height:1.65; letter-spacing:-.01em}
+h1 .accent{color:var(--red)}
+.lead{color:var(--muted); font-size:16.5px; margin:12px 0 0; max-width:58ch}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:22px}
+.chip{font-size:13px; color:var(--muted); background:var(--card); border:1px solid var(--border); padding:3px 12px; border-radius:999px; white-space:nowrap}
+.chip.mono{font-family:var(--mono); font-size:12px}
+.badges{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+.badge{font-size:13px; padding:3px 12px; border-radius:999px; border:1px solid}
+.badge.ok{color:#7ce2a8; background:rgba(67,209,124,.09); border-color:rgba(67,209,124,.35)}
+.badge.note{color:#9ecbff; background:rgba(83,193,245,.08); border-color:rgba(83,193,245,.3)}
+.stats{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:24px}
+.stat{background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--border); border-radius:14px; padding:10px 12px; text-align:center}
+.stat b{display:block; font-size:23px; font-family:var(--mono); color:#fff; line-height:1.5}
+.stat span{font-size:12.5px; color:var(--muted); display:block; line-height:1.7}
+
+.qr-side{text-align:center}
+.qr-card{width:250px; background:#fff; border-radius:18px; padding:15px;
+  box-shadow:0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08), 0 0 46px rgba(229,72,77,.16)}
+.qr-cap{margin-top:14px; font-size:13.5px}
+.qr-sub{font-size:12px; color:var(--faint); line-height:1.8}
+
+/* ---------- Section ခေါင်းစဉ်များ ---------- */
+.section{margin-top:64px; position:relative; scroll-margin-top:70px}
+h3[id]{scroll-margin-top:86px}
+.section::after{content:attr(data-num); position:absolute; top:-30px; right:0; font-family:var(--mono);
+  font-size:68px; font-weight:700; color:rgba(255,255,255,.035); pointer-events:none; line-height:1}
+.sec-head{display:flex; gap:14px; align-items:flex-start; margin-bottom:6px}
+.sec-num{flex:none; width:42px; height:42px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg,rgba(229,72,77,.26),rgba(229,72,77,.07)); border:1px solid rgba(229,72,77,.42);
+  color:var(--red); font-weight:800; font-size:19px}
+h2{margin:2px 0 0; font-size:clamp(19px,3vw,23px); font-weight:800; color:#fff; line-height:1.75}
+.sec-sub{color:var(--faint); font-size:13.5px; margin:0 0 8px 56px; font-family:var(--mono)}
+h3{font-size:16.5px; color:#fff; margin:30px 0 10px; font-weight:700; line-height:1.85; display:flex; align-items:center; gap:10px}
+h3::before{content:""; width:8px; height:8px; border-radius:2.5px; background:linear-gradient(135deg,var(--red-dim),#ff9a9a); transform:rotate(45deg); flex:none}
+p{margin:10px 0}
+
+/* ---------- ကတ်များ / Callout များ ---------- */
+.card{background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--border); border-radius:16px; padding:20px 24px; margin:16px 0}
+.callout{display:flex; gap:14px; padding:16px 20px; border-radius:14px; border:1px solid; margin:16px 0; align-items:flex-start}
+.callout .ico{flex:none; font-size:19px; line-height:1.9}
+.callout h4{margin:0 0 2px; font-size:15.5px; color:#fff; line-height:1.85}
+.callout p{margin:0; font-size:14.5px; color:var(--muted); line-height:1.95}
+.callout.key{background:linear-gradient(135deg,rgba(229,72,77,.14),rgba(229,72,77,.04)); border-color:rgba(229,72,77,.45); box-shadow:0 0 34px rgba(229,72,77,.1)}
+.callout.key h4{color:#ffb3b3}
+.callout.warn{background:rgba(245,176,74,.07); border-color:rgba(245,176,74,.4)}
+.callout.danger{background:rgba(229,72,77,.08); border-color:rgba(229,72,77,.5)}
+.callout.info{background:rgba(83,193,245,.07); border-color:rgba(83,193,245,.35)}
+.callout.ok{background:rgba(67,209,124,.07); border-color:rgba(67,209,124,.4)}
+
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:16px 0}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0}
+.mini{background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--border); border-radius:14px; padding:16px 18px}
+.mini .m-ico{font-size:20px}
+.mini h4{margin:4px 0 4px; font-size:15px; color:#fff; line-height:1.8}
+.mini p{margin:0; font-size:13.8px; color:var(--muted); line-height:1.95}
+
+/* ---------- ဖော်မြူလာ / code ---------- */
+.formula{background:#0a0f16; border:1px solid var(--border); border-radius:12px; padding:14px 18px; margin:14px 0;
+  font-family:var(--mono); font-size:13.5px; line-height:2; color:#c9d6e4; overflow-x:auto; white-space:nowrap}
+.code-block{border:1px solid var(--border); border-radius:14px; overflow:hidden; margin:18px 0; background:#0a0f16}
+.code-head{display:flex; align-items:center; gap:8px; padding:9px 14px; border-bottom:1px solid var(--border); background:rgba(255,255,255,.02)}
+.dots span{width:11px; height:11px; border-radius:50%; display:inline-block; margin-right:6px}
+.dots span:nth-child(1){background:#ff5f57}.dots span:nth-child(2){background:#febc2e}.dots span:nth-child(3){background:#28c840}
+.fname{font-family:var(--mono); font-size:12px; color:var(--muted); margin-left:8px}
+.copy-btn{margin-left:auto; font-family:inherit; font-size:12px; color:var(--muted); background:rgba(255,255,255,.05);
+  border:1px solid var(--border2); border-radius:7px; padding:3px 12px; cursor:pointer; transition:.15s}
+.copy-btn:hover{color:#fff; border-color:var(--red-dim)}
+.code-block pre{margin:0; padding:18px 20px; overflow-x:auto; font-family:var(--mono); font-size:13.3px; line-height:2; color:#dbe4ee}
+.k{color:#ff7b72}.f{color:#79c0ff}.s{color:#a5d6ff}.c{color:#8b949e;font-style:italic}.n{color:#ffa657}.d{color:#d2a8ff}
+
+pre::-webkit-scrollbar, .tbl-wrap::-webkit-scrollbar{height:8px}
+pre::-webkit-scrollbar-thumb, .tbl-wrap::-webkit-scrollbar-thumb{background:var(--border2); border-radius:4px}
+
+/* ---------- TLV ပုံရိပ် ---------- */
+.tlv-map{margin:18px 0 6px}
+.tlv-row{display:grid; grid-template-columns:2fr 6fr 14fr 6fr 14fr; gap:4px}
+.seg{min-height:54px; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;
+  font-family:var(--mono); font-size:11.5px; line-height:1.7; padding:6px 4px; border:1px solid; word-break:break-word}
+.seg-struct{background:rgba(143,167,189,.10); border-color:rgba(143,167,189,.32); color:#aebfd1}
+.seg-brand{background:rgba(229,72,77,.16); border-color:rgba(229,72,77,.5); color:#ff9c9c}
+.seg-phone{background:rgba(245,176,74,.15); border-color:rgba(245,176,74,.55); color:#ffc873; animation:glow 2.6s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 rgba(245,176,74,0)}50%{box-shadow:0 0 18px rgba(245,176,74,.35)}}
+.tlv-caps{display:grid; grid-template-columns:2fr 6fr 14fr 6fr 14fr; gap:4px; margin-top:6px}
+.tlv-caps div{font-size:11px; color:var(--faint); text-align:center; line-height:1.8}
+
+/* ---------- ဇယားများ ---------- */
+.tbl-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:14px; margin:16px 0}
+table{width:100%; border-collapse:collapse; font-size:14.3px; min-width:560px}
+th{background:rgba(255,255,255,.03); color:var(--muted); font-weight:600; font-size:12px; letter-spacing:.08em;
+  text-align:left; padding:11px 15px; border-bottom:1px solid var(--border); white-space:nowrap}
+td{padding:12px 15px; border-bottom:1px solid rgba(30,41,55,.55); vertical-align:top; line-height:1.95}
+tr:last-child td{border-bottom:none}
+td .mono, .mono-cell{font-family:var(--mono); font-size:12.5px; color:#b9c9da; word-break:break-all}
+tr.hl td{background:rgba(245,176,74,.07)}
+tr.hl td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+.ok-pill{display:inline-block; font-size:12px; color:#7ce2a8; background:rgba(67,209,124,.1); border:1px solid rgba(67,209,124,.35); border-radius:999px; padding:0 10px; line-height:1.9; white-space:nowrap}
+
+/* ---------- QR anatomy ---------- */
+.anatomy{display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:16px 0}
+.a-chip{border:1px solid; border-radius:12px; padding:10px 14px; display:flex; flex-direction:column; gap:2px; min-width:60px}
+.a-chip code{background:none; border:none; padding:0; font-size:13px; word-break:break-all; color:inherit}
+.a-chip small{font-size:11px; color:var(--faint); line-height:1.7}
+.plus{align-self:center; color:var(--faint); font-family:var(--mono); font-size:15px}
+.c-b64{color:var(--cyan); border-color:rgba(83,193,245,.4); background:rgba(83,193,245,.06)}
+.c-f{color:var(--purple); border-color:rgba(183,140,247,.4); background:rgba(183,140,247,.07)}
+.c-chk{color:var(--green); border-color:rgba(67,209,124,.4); background:rgba(67,209,124,.06)}
+.c-ts{color:var(--amber); border-color:rgba(245,176,74,.42); background:rgba(245,176,74,.06)}
+.c-eq{color:var(--slate); border-color:rgba(143,167,189,.35); background:rgba(143,167,189,.07)}
+
+.hexline, .qrline{background:#0a0f16; border:1px solid var(--border); border-radius:12px; padding:14px 18px; margin:12px 0;
+  font-family:var(--mono); font-size:13px; line-height:2.1; white-space:pre-wrap; word-break:break-all}
+.t-tlv,.h-struct{color:var(--cyan)}
+.h-phone{color:var(--amber); background:rgba(245,176,74,.13); border-radius:4px; padding:1px 2px}
+.t-f{color:var(--purple); background:rgba(183,140,247,.13); border-radius:4px; padding:1px 3px}
+.t-chk{color:var(--green); background:rgba(67,209,124,.13); border-radius:4px; padding:1px 3px}
+.t-ts{color:var(--amber)}
+.t-eq{color:var(--slate)}
+.hex-caps{display:grid; grid-template-columns:22fr 6fr 14fr; gap:4px; margin:8px 0 4px}
+.hex-caps div{font-size:11px; color:var(--faint); text-align:center; line-height:1.8}
+.hex-caps div span{border-top:2px solid; padding-top:3px; display:block; border-radius:2px}
+.hex-caps .b1 span{border-color:var(--cyan)}
+.hex-caps .b2 span{border-color:var(--amber)}
+.hex-caps .b3 span{border-color:var(--cyan)}
+
+/* ---------- kv / steps / chat ---------- */
+.kv{display:grid; grid-template-columns:180px 1fr; gap:8px 18px; margin:14px 0}
+.kv .k{font-weight:700; color:#fff; font-size:14px; line-height:1.95}
+.kv .v{color:var(--muted); font-size:14.3px; line-height:1.95}
+.steps{list-style:none; counter-reset:st; padding:0; margin:16px 0}
+.steps li{counter-increment:st; display:flex; gap:14px; padding:10px 0; border-bottom:1px dashed var(--border); align-items:flex-start}
+.steps li:last-child{border-bottom:none}
+.steps li::before{content:counter(st,myanmar); flex:none; width:34px; height:34px; margin-top:9px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; color:var(--red);
+  background:rgba(229,72,77,.1); border:1px solid rgba(229,72,77,.35)}
+.steps b{display:block; color:#fff; font-size:14.8px}
+.steps span{display:block; color:var(--muted); font-size:13.8px; line-height:1.95}
+
+.chat{display:flex; flex-direction:column; gap:12px; margin:18px 0; padding:20px 22px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(180deg,var(--card),var(--card2))}
+.chat-row{display:flex; flex-direction:column; max-width:78%}
+.chat-row.user{align-self:flex-end; align-items:flex-end}
+.chat-row.bot{align-self:flex-start; align-items:flex-start}
+.bubble{border-radius:16px; padding:8px 16px; font-size:14.5px; border:1px solid; line-height:1.9}
+.chat-row.user .bubble{background:rgba(229,72,77,.12); border-color:rgba(229,72,77,.4); border-bottom-right-radius:5px; color:#ffd7d7; font-family:var(--mono); font-size:13.5px}
+.chat-row.bot .bubble{background:rgba(83,193,245,.09); border-color:rgba(83,193,245,.35); border-bottom-left-radius:5px}
+.bubble small{display:block; font-size:12px; color:var(--muted); line-height:1.8}
+.chat-who{font-size:11.5px; color:var(--faint); margin-top:3px}
+
+/* ---------- Footer ---------- */
+footer{margin-top:70px; border-top:1px solid var(--border); padding-top:26px}
+.foot-path{font-family:var(--mono); font-size:12.5px; color:var(--muted); background:var(--card2); border:1px dashed var(--border2); border-radius:10px; padding:10px 16px; word-break:break-all}
+.foot-meta{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-top:16px; font-size:12.5px; color:var(--faint)}
+
+/* ---------- ဖုန်းအတွက် ---------- */
+@media (max-width:820px){
+  .hero-grid{grid-template-columns:1fr; gap:26px}
+  .qr-side{display:flex; flex-direction:column; align-items:center}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .grid3{grid-template-columns:1fr}
+  .grid2{grid-template-columns:1fr}
+  .kv{grid-template-columns:1fr}
+  .kv .k{margin-bottom:-6px}
+  .sec-sub{margin-left:0}
+  .section::after{display:none}
+  .chat-row{max-width:92%}
+}
+@media (max-width:520px){
+  body{font-size:15.8px}
+  .tlv-row{grid-template-columns:1fr 1fr 1fr 1fr 1fr}
+  .tlv-caps{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= NAV ================= -->
+<nav class="topnav">
+  <div class="inner">
+    <span class="brand"><span class="dot"></span>KBZPay · QR Notes</span>
+    <a href="#s1"><b>၁</b>အနှစ်ချုပ်</a>
+    <a href="#s2"><b>၂</b>ဖွဲ့စည်းပုံ</a>
+    <a href="#s3"><b>၃</b>Python</a>
+    <a href="#s4"><b>၄</b>စမ်းသပ်မှု</a>
+    <a href="#s5"><b>၅</b>သတိ</a>
+    <a href="#s6"><b>၆</b>Bot အစီအစဉ်</a>
+    <a href="#refs">ကိုးကား</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+<!-- ================= HERO ================= -->
+<header class="hero">
+  <div class="hero-grid">
+    <div>
+      <div class="eyebrow">
+        <span class="tag">REVERSE ENGINEERING NOTES</span>
+        <span class="pill">FORMAT ✓ FULLY DECODED</span>
+      </div>
+      <h1>KBZPay QR ဖွဲ့စည်းပုံ —<br><span class="accent">ငွေလက်ခံ QR</span> အထဲကို တူးဖော်ချက်</h1>
+      <p class="lead">KBZPay ငွေလက်ခံ (Receive) QR တစ်ခုရဲ့ အထဲမှာ ဘာတွေ ပါဝင်ပြီး ဘယ်လို အလုပ်လုပ်သလဲ ဆိုတာကို APK ကို decode လုပ်စဉ်က ရရှိခဲ့တဲ့ တွေ့ရှိချက်တွေရဲ့ မှတ်တမ်းအပြည့်အစုံပါ။ ဒီမှတ်တမ်းအတိုင်း လိုက်လုပ်ကြည့်ရင် — မည်သည့် ဖုန်းနံပါတ်အတွက်မဆို KBZPay server က လက်ခံမယ့် QR ကို ကိုယ်တိုင် ဖန်တီးနိုင်ပါတယ်။</p>
+      <div class="chips">
+        <span class="chip">🗓 ၁ စက်တင်ဘာ ၂၀၂၆</span>
+        <span class="chip mono">APK · KBZPay 5.8.5 · build 242</span>
+        <span class="chip mono">com.kbzbank.kpaycustomer</span>
+      </div>
+      <div class="badges">
+        <span class="badge ok">✅ ကိုယ့်အကောင့် QR — အောင်မြင်</span>
+        <span class="badge ok">✅ အခြားအကောင့် QR (cross-number) — အောင်မြင်</span>
+        <span class="badge note">နှစ်ခုလုံး KBZPay server လက်ခံ</span>
+      </div>
+    </div>
+    <div class="qr-side">
+      <div class="qr-card" role="img" aria-label="KBZPay နမူနာ QR ကုဒ်"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAJYAQAAAACWHaVxAAAD2klEQVR4nO3dQXKjMBCF4ddTqcK7OQK+Sc6em8ARZmdWPQshqSWTTWwniv1r4TLGfAWLlkRLAnPdrfy5H4WFhYWFhYWFhYWFhYWFhZWLu7v7Jfwyl83Z/ZI36//cfVF/hLv7qNeIhYV1J2uPdb9Isr/uLmm15r+rafIl/bk74nHnhYWF9aXyVr+aJKV0/paCel4kreZlr7bT7LbvaI6493lhYWE9xpr3kJ18KR+1Le8a9G88LywsrO+33o5+9O20f1jpy9tmkk+eewMPPi8sLKzbSojtZqbOaj556e6f5sUP/tfN7Rn1GrGwXtpaLZWTJPvri7TZWXbKffn0Lf4Wj3jceWFhYf24tfcBprY532x2m1zyzWbX5E2iT5q9P+Le54WFhXVjyeNrdaRtdk15lL75zd09ZPvyWP++gzF8LKyRLOXAXKR9KD2HdYn3FMx7REshytsR+FGvEQsL68bStfxS6QN4+tjb++7PuZ5QOoJ6AgtrMCvcu/tmkqbLnpe38pGG6iTJpjTRbs/7+XaalzpUN+o1YmG9onU4/77uqC142HHJE/PDXTztNhbW81px/U1N6nm+5w9JvZLKS1VE2VuPGPUasbBe0Qqh6XFt3dwn9ZrYzsfWtXrENhbWWJa6sL5umf2wjW520G5jYT21FVPylzxql/fNfU2Q65O5jOEzzoeFNaYV+wDtR7Py7nrkrgzzi9jGwhrQukrE1Xl2dZJOzdVPpfffbhLbWFhPbPX9+9r8p7qj1BihTmgrEOoJLKwRrTiGX3rwIccXJ+XFDn3eJMeHhTWm1T730kMc13v3rnnu5t8T21hYz24dJ+enZrPrElyPB9K/x8IazirPz1nP+wx7r5uzp8n1k0uaLus57T1YNn/388LCwrqxhAY4jsNd3893C2rblXa021hYT2z1E/dCHqCO3LdJ/HRYu1SfegILazDrYO18vEUP/YL2lTjd4jxiGwtrMOuqf1+W0CgGc31WRi6xpafdxsJ6aqt/hp7i0N0SKoFmUm4t5O+xsMa0+mV1NcBVM3ttKq8Z8Hfm3mFhjWxtVstZ7v5hecd7eGpGfRy+NjtL7ZuuBr9GLCysr5auf998U0jYhzn55TAxjw8L6xdYZmaxgd979aulyP1n7+F91fnP+3txHnleWFhYj7L2UP8wM3tvx/B+9LywsLC+xTp8f60mX03S7NpMsvIie5dW883St7Pa19mOeo1YWK9ofX7vHoblvH+Sjsd1eeTvsbAGtI6ff99O0uneb+VxQV2cXDvqNWJhYd1W7JP1dF8po14jFhYWFhYWFhYWFhYWFtZvtv4DgG3FO8A2D60AAAAASUVORK5CYII=" alt="KBZPay QR — 09960476738" style="width:100%;height:auto;display:block;border-radius:10px"></div>
+      <div class="qr-cap">နမူနာ QR · <span class="mono">09960476738</span></div>
+      <div class="qr-sub">✓ စမ်းသပ်အောင်မြင်ပြီးသား QR — scanner နဲ့ ဖတ်ကြည့်ပါ<br>⚠️ ကိုယ့်အကောင့် နံပါတ်မို့ — ကိုယ်တိုင် scan ရင် “ကိုယ့်အကောင့်ကို လွှဲလို့မရပါ” error ပေါ်မယ်</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>42</b><span>TLV payload bytes</span></div>
+    <div class="stat"><b>56</b><span>base64 စာလုံးရေ</span></div>
+    <div class="stat"><b>6</b><span>ဖုန်းနံပါတ် BCD bytes</span></div>
+    <div class="stat"><b>2/2</b><span>စမ်းသပ်မှု အောင်မြင်</span></div>
+  </div>
+</header>
+
+<!-- ================= ၁ ================= -->
+<section class="section" id="s1" data-num="01">
+  <div class="sec-head">
+    <div class="sec-num">၁</div>
+    <div>
+      <h2>ရှာဖွေတွေ့ရှိချက် အနှစ်ချုပ်</h2>
+      <div class="sec-sub">TL;DR — ဖုန်းနံပါတ်က BCD အဖြစ်နဲ့ ထည့်ထားတာပဲ</div>
+    </div>
+  </div>
+
+  <p>KBZPay ရဲ့ ငွေလက်ခံ (Receive) QR ထဲမှာ ဖုန်းနံပါတ်ကို <b>BCD encoding</b> နဲ့ တိုက်ရိုက်ထည့်သွင်းထားတာကို တွေ့ရှိခဲ့ပါတယ်။ App က QR ထဲက အချက်အလက်ကို ကိုယ်တိုင် စစ်ဆေးပြီး လုပ်ဆောင်တာ မဟုတ်ဘဲ — server ကို ပို့လိုက်ပြီးမှ၊ server ဘက်ကမှ string ကို စိတ်ဖြာ (parse) ပြီး ဖုန်းနံပါတ်ကို ဖတ်ယူကာ ဆက်သွယ်ရမယ့် အကောင့်ကို လုပ်ဆောင်ပါတယ်။</p>
+
+  <div class="callout key">
+    <div class="ico">🔑</div>
+    <div>
+      <h4>အဓိက တွေ့ရှိချက်</h4>
+      <p>QR ထဲက template bytes တွေက မည်သည့်အခါမှ မပြောင်းလဲပါဘူး။ ဒါကြောင့် မှန်ကန်တဲ့ template တစ်ခုနဲ့ ဖုန်းနံပါတ်ရဲ့ BCD ကို လက်ဖြင့် တည်ဆောက်နိုင်ရင် — <b>မည်သည့် ဖုန်းနံပါတ်အတွက်မဆို</b> KBZPay server လက်ခံမယ့် ငွေလက်ခံ QR ကို ဖန်တီးနိုင်ပါတယ်။</p>
+    </div>
+  </div>
+
+  <h3>ဖုန်းနံပါတ် ရိုးရိုးကို တိုက်ရိုက် QR လုပ်ပြီး Scan လုပ်လို့ မရတဲ့ အကြောင်းရင်း</h3>
+  <div class="grid3">
+    <div class="mini">
+      <div class="m-ico">📤</div>
+      <h4>Scanner က ချက်ချင်း server ကို ပို့လိုက်တယ်</h4>
+      <p><span class="mono">ScanNewFragment.analysisResult</span> က scan ရရှိလာတဲ့ string ကို app ထဲ (local) မှာ စစ်ဆေးခြင်း မရှိဘဲ <span class="mono">ScanQRCode2</span> command နဲ့ server ကို တန်းပို့လိုက်ပါတယ်။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">🧩</div>
+      <h4>Server က ကိုယ်ပိုင် format လေးကိုပဲ နားလည်တယ်</h4>
+      <p>Server က KBZPay ကိုယ်ပိုင် TLV format ကိုပဲ ဖတ်တတ်ပါတယ်။ ဖုန်းနံပါတ် ရိုးရိုး (ဥပမာ <span class="mono">09960476738</span>) ဖြစ်နေရင် <b>“QRကုဒ် မမှန်ကန်ပါ။”</b> ဆိုတဲ့ error နဲ့ ပြန်ပယ်ချပါတယ် — <span class="mono">res/values-my-rMM/strings.xml:657</span>။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">🌊</div>
+      <h4>WavePay မှာတော့ ရတယ်</h4>
+      <p>နှိုင်းယှဉ်ကြည့်ရင် WavePay က ဖုန်းနံပါတ်ကို တိုက်ရိုက် QR ထဲ ထည့်သွင်းထားတာကို လက်ခံပါတယ်။ ဒါက operator တစ်ခုချင်းစီရဲ့ ဒီဇိုင်း ရွေးချယ်မှု သက်သက်သာ ဖြစ်ပါတယ်။</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ၂ ================= -->
+<section class="section" id="s2" data-num="02">
+  <div class="sec-head">
+    <div class="sec-num">၂</div>
+    <div>
+      <h2>QR String ဖွဲ့စည်းပုံ — အပြည့်အစုံ ဖြေရှင်းပြီး</h2>
+      <div class="sec-sub">QR = base64(TLV) + suffix</div>
+    </div>
+  </div>
+
+  <p>QR string တစ်ခုလုံးက အောက်ပါ formula အတိုင်း အပိုင်းခွဲပြီး ဆက်စပ်ထားတာပါ —</p>
+
+  <pre class="formula">QR = <span class="t-tlv">base64( TLV · 42 bytes )</span> + <span class="t-f">"F"</span> + <span class="t-chk">checksum(1 char)</span> + <span class="t-ts">hex( serverTimeMs )</span> + <span class="t-eq">"=="</span></pre>
+
+  <h3>TLV Payload — 42 bytes</h3>
+  <div class="tlv-map">
+    <div class="tlv-row">
+      <div class="seg seg-struct">85 06</div>
+      <div class="seg seg-brand">KBZPay</div>
+      <div class="seg seg-struct">Template (14 B)</div>
+      <div class="seg seg-phone">09 96 04 76 73 8D</div>
+      <div class="seg seg-struct">Template (14 B)</div>
+    </div>
+    <div class="tlv-caps">
+      <div>bytes 0–1<br>Magic header</div>
+      <div>bytes 2–7<br>ASCII</div>
+      <div>bytes 8–21<br>မပြောင်းလဲ</div>
+      <div>bytes 22–27<br>ဖုန်းနံပါတ် BCD</div>
+      <div>bytes 28–41<br>မပြောင်းလဲ</div>
+    </div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>Offset</th><th>Bytes (hex)</th><th>အဓိပ္ပါယ်</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono-cell">0–1</td>
+          <td class="mono-cell">85 06</td>
+          <td>Magic header — tag <code>0x85</code>, length <code>6</code></td>
+        </tr>
+        <tr>
+          <td class="mono-cell">2–7</td>
+          <td class="mono-cell">4B 42 5A 50 61 79</td>
+          <td><code>"KBZPay"</code> — ASCII အတိုင်း ပါနေတာပါ</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">8–21</td>
+          <td class="mono-cell">61 40 4F 02 F0 50 02 10 51 02 31 31 57 16</td>
+          <td>Template (constant) — မပြောင်းလဲသော အပိုင်း</td>
+        </tr>
+        <tr class="hl">
+          <td class="mono-cell">22–27</td>
+          <td class="mono-cell">09 96 04 76 73 8D</td>
+          <td><b>ဖုန်းနံပါတ် BCD</b> — ဂဏန်း ၁၁ လုံး → 6 bytes။ ဂဏန်း စုံကိန်း မဖြစ်နေရင် အဆုံးမှာ <code>D</code> ထည့်ဖြည့် (pad) ပါတယ်</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">28–41</td>
+          <td class="mono-cell">26 09 10 10 1F 9F 08 04 01 01 9F 24 01 30</td>
+          <td>Template (constant) — expiry/flags ဖြစ်နိုင်ခြေ ရှိပေမယ့် အဓိပ္ပါယ် အတိအကျ မသိရသေးပါ။ ဒါပေမယ့် ဒီအတိုင်း copy လုပ်ရုံနဲ့ အလုပ်လုပ်ပါတယ်</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>နောက်ဆက် (Suffix) — <span class="mono">AddTimeStampToQRCode</span> · CommonUtil.smali:223</h3>
+  <pre class="formula"><span class="t-f">"F"</span> + toBase64[ digitSum(timestampMs) % 64 ] + Long.toHexString(timestampMs) + <span class="t-eq">"=="</span></pre>
+
+  <div class="kv">
+    <div class="k">Timestamp</div>
+    <div class="v">server time ကို <b>milliseconds</b> အတိအကျ သုံးပါတယ်။ ဥပမာ <code>1a05c4a7112</code> = ၁ စက်တင်ဘာ ၂၀၂၆ · 15:56:17 (MMT)။</div>
+    <div class="k">toBase64 alphabet</div>
+    <div class="v">standard base64 အက္ခရာစဉ် (<code>A-Za-z0-9+/</code>) အတိုင်းပါပဲ။</div>
+    <div class="k">Checksum တွက်နည်း</div>
+    <div class="v">timestamp ms ရဲ့ ဂဏန်းအားလုံးကို ပေါင်းပြီး <code>% 64</code> လုပ်ရင် ရတဲ့ နံပါတ်အတိုင်း alphabet ကနေ အက္ခရာ တစ်လုံး ယူပါတယ်။</div>
+    <div class="k">"==" အဆုံးသတ် လက္ခဏာ</div>
+    <div class="v">base64(42 bytes) က <b>အတိအကျ 56 chars</b> ရှိလို့ padding မလိုပါဘူး။ အဆုံးမှာ ရှိနေတဲ့ <code>==</code> က base64 padding မဟုတ်ဘဲ — <b>literal terminator</b> သာ ဖြစ်ပါတယ်။</div>
+  </div>
+
+  <h3>နမူနာ — အပိုင်းလိုက် ခွဲကြည့်ခြင်း</h3>
+  <p>ဖုန်းနံပါတ် <span class="mono">09960476738</span> နဲ့ timestamp <span class="mono">1788254777618</span> ms (၁ စက်တင်ဘာ ၂၀၂၆ · 15:56:17 MMT) ကို သုံးလိုက်ရင် —</p>
+
+  <div class="anatomy">
+    <div class="a-chip c-b64"><code>hQZLQlpQYXlhQE8C8FACEFECMTFXFgmWBHZzjSYJEBAfnwgEAQGfJAEw</code><small>base64(TLV) — 56 chars</small></div>
+    <span class="plus">+</span>
+    <div class="a-chip c-f"><code>F</code><small>separator (literal)</small></div>
+    <span class="plus">+</span>
+    <div class="a-chip c-chk"><code>H</code><small>checksum — digitSum(ts) % 64</small></div>
+    <span class="plus">+</span>
+    <div class="a-chip c-ts"><code>1a05c4a7112</code><small>hex(timestamp ms)</small></div>
+    <span class="plus">+</span>
+    <div class="a-chip c-eq"><code>==</code><small>literal terminator</small></div>
+  </div>
+
+  <p>ဖုန်းနံပါတ် ပါဝင်တဲ့ TLV hex အပြည့်အစုံကတော့ —</p>
+  <pre class="hexline"><span class="h-struct">85064b425a50617961404f02f0500210510231315716</span><span class="h-phone">09960476738d</span><span class="h-struct">260910101f9f080401019f240130</span></pre>
+  <div class="hex-caps">
+    <div class="b1"><span>HEAD — 22 bytes</span></div>
+    <div class="b2"><span>ဖုန်း BCD — 6 B</span></div>
+    <div class="b3"><span>TAIL — 14 B</span></div>
+  </div>
+
+  <p>စုပေါင်းရရှိလာတဲ့ QR string အပြည့်အစုံ —</p>
+  <pre class="qrline"><span class="t-tlv">hQZLQlpQYXlhQE8C8FACEFECMTFXFgmWBHZzjSYJEBAfnwgEAQGfJAEw</span><span class="t-f">F</span><span class="t-chk">H</span><span class="t-ts">1a05c4a7112</span><span class="t-eq">==</span></pre>
+
+  <div class="callout ok">
+    <div class="ico">✅</div>
+    <div>
+      <h4>တွက်ကြည့်ချက်</h4>
+      <p>timestamp <span class="mono">1788254777618</span> ရဲ့ ဂဏန်းပေါင်း = 1+7+8+8+2+5+4+7+7+7+6+1+8 = <b>71</b> → 71 % 64 = 7 → alphabet[7] = <b>"H"</b>။ ဒါကြောင့် suffix မှာ <code>F</code> + <code>H</code> + <code>1a05c4a7112</code> + <code>==</code> ဆိုပြီး အတိအကျ ရပါတယ်။</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ၃ ================= -->
+<section class="section" id="s3" data-num="03">
+  <div class="sec-head">
+    <div class="sec-num">၃</div>
+    <div>
+      <h2>Python နဲ့ QR ဖန်တီးနည်း</h2>
+      <div class="sec-sub">kbzpay_qr.py</div>
+    </div>
+  </div>
+
+  <p>အောက်ပါ script လေးက အပေါ်မှာ ရှင်းပြထားတဲ့ အဆင့်များအတိုင်း QR string ထုတ်ပေးပြီး PNG ဖိုင်လည်း သိမ်းပေးပါတယ် (<code>pip install qrcode</code> လုပ်ပြီးမှ အသုံးချပါ) —</p>
+
+  <div class="code-block">
+    <div class="code-head">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span class="fname">kbzpay_qr.py</span>
+      <button class="copy-btn" onclick="copyCode(this)">ကူးယူ</button>
+    </div>
+    <pre><code><span class="k">import</span> base64, time, qrcode
+
+<span class="f">ALPHA</span> = <span class="s">"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"</span>
+<span class="f">HEAD</span>  = bytes.<span class="f">fromhex</span>(<span class="s">"85064b425a50617961404f02f0500210510231315716"</span>)
+<span class="f">TAIL</span>  = bytes.<span class="f">fromhex</span>(<span class="s">"260910101f9f080401019f240130"</span>)
+
+<span class="k">def</span> <span class="d">bcd</span>(phone: <span class="f">str</span>) -> <span class="f">bytes</span>:
+    <span class="c"># ဂဏန်း ၁၁ လုံး (မကွဲညီ) → 'D' ထည့်ဖြည့်ပြီး 6 bytes ဖြစ်အောင်လုပ်</span>
+    d = phone <span class="k">if</span> <span class="f">len</span>(phone) % <span class="n">2</span> == <span class="n">0</span> <span class="k">else</span> phone + <span class="s">'D'</span>
+    <span class="k">return</span> <span class="f">bytes</span>(<span class="f">int</span>(d[i:i+<span class="n">2</span>], <span class="n">16</span>) <span class="k">for</span> i <span class="k">in</span> <span class="f">range</span>(<span class="n">0</span>, <span class="f">len</span>(d), <span class="n">2</span>))
+
+<span class="k">def</span> <span class="d">kbzpay_qr_string</span>(phone: <span class="f">str</span>, ts_ms: <span class="f">int</span> | <span class="f">None</span> = <span class="f">None</span>) -> <span class="f">str</span>:
+    ts  = ts_ms <span class="k">or</span> <span class="f">int</span>(time.<span class="f">time</span>() * <span class="n">1000</span>)
+    tlv = HEAD + <span class="d">bcd</span>(phone) + TAIL            <span class="c"># 42 bytes ဖြစ်ရမယ်</span>
+    s   = base64.<span class="f">b64encode</span>(tlv).<span class="f">decode</span>()       <span class="c"># 56 chars</span>
+    chk = ALPHA[<span class="f">sum</span>(<span class="f">int</span>(d) <span class="k">for</span> d <span class="k">in</span> <span class="f">str</span>(ts)) % <span class="n">64</span>]
+    <span class="k">return</span> s + <span class="s">"F"</span> + chk + <span class="f">format</span>(ts, <span class="s">'x'</span>) + <span class="s">"=="</span>
+
+<span class="c"># ဖန်တီးပြီး PNG သိမ်း</span>
+img = qrcode.<span class="f">make</span>(<span class="d">kbzpay_qr_string</span>(<span class="s">"09960476738"</span>))
+img.<span class="f">save</span>(<span class="s">"qr.png"</span>)</code></pre>
+  </div>
+
+  <h3>လုပ်ဆောင်ချက် အဆင့်လိုက်</h3>
+  <ol class="steps">
+    <li><b>BCD ပြောင်း</b><span>ဖုန်းနံပါတ်ကို ဂဏန်း ၂ လုံးစီ ခွဲပြီး 1 byte အဖြစ် ပြောင်းပါတယ်။ မကွဲညီ (odd) ဖြစ်နေရင် အဆုံးမှာ 'D' ထည့်ဖြည့်ပါတယ်။</span></li>
+    <li><b>TLV တည်ဆောက်</b><span>HEAD + BCD + TAIL ဆက်လိုက်ရင် 42-byte payload ရပါတယ်။</span></li>
+    <li><b>base64 encode</b><span>42 bytes ကနေ စာလုံး အတိအကျ 56 လုံး ရပါတယ်။</span></li>
+    <li><b>Suffix ဆက်</b><span>"F" + checksum အက္ခရာ + timestamp (hex) + "==" ကို အဆုံးမှာ ဆက်ပေးလိုက်ပါတယ်။</span></li>
+    <li><b>QR ထုတ်</b><span>ရလာတဲ့ string ကို qrcode library နဲ့ PNG ပုံအဖြစ် ထုတ်ယူပါတယ်။</span></li>
+  </ol>
+</section>
+
+<!-- ================= ၄ ================= -->
+<section class="section" id="s4" data-num="04">
+  <div class="sec-head">
+    <div class="sec-num">၄</div>
+    <div>
+      <h2>စမ်းသပ်မှု မှတ်တမ်း — တကယ့် Scan အောင်မြင်မှုများ</h2>
+      <div class="sec-sub">KBZPay 5.8.5 · ၁ စက်တင်ဘာ ၂၀၂၆</div>
+    </div>
+  </div>
+
+  <p>ဖန်တီးထားတဲ့ QR နှစ်ခုကို တကယ့် KBZPay app နဲ့ scan ကြည့်ခဲ့ပါတယ်။ နှစ်ခုလုံး အောင်မြင်ပါတယ် —</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>QR ဖိုင်</th><th>နံပါတ် (နာမည်)</th><th>Scan ရလဒ်</th><th>အချိန်</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono-cell">1</td>
+          <td class="mono-cell">test_qr_own.png</td>
+          <td><span class="mono">09960476738</span><br>Aung Swe Phyo</td>
+          <td><span class="ok-pill">✅ အောင်မြင်</span><br>Transfer မျက်နှာစာ ပေါ်လာ — “Aung Swe Phyo(*******6738)”</td>
+          <td class="mono-cell">5:04 PM</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">2</td>
+          <td class="mono-cell">test_qr_friend.png</td>
+          <td><span class="mono">09691915980</span><br>MA MAY THAZIN SAUNG</td>
+          <td><span class="ok-pill">✅ အောင်မြင်</span><br>Transfer မျက်နှာစာ ပေါ်လာ — “MA MAY THAZIN SAUNG(******5980)”</td>
+          <td class="mono-cell">5:11 PM</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>စမ်းသပ်မှုကနေ အတည်ပြုရရှိချက်များ</h3>
+  <div class="grid3">
+    <div class="mini">
+      <div class="m-ico">📖</div>
+      <h4>ဖုန်းနံပါတ်ကို တိုက်ရိုက်ဖတ်တယ်</h4>
+      <p>Server က BCD ထဲက ဖုန်းနံပါတ်ကို တန်းဖတ်ပြီး လုပ်ဆောင်ပါတယ်။ template bytes တွေအတွက် စစ်ဆေးခြင်း (MAC validation) လုံးဝ မရှိပါ။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">⏱</div>
+      <h4>Timestamp ဟောင်းလည်း အမြဲ အလုပ်လုပ်တယ်</h4>
+      <p>အရင်က ထုတ်ယူခဲ့တဲ့ QR (saved QR) ကို အမြဲတမ်း ပြန်သုံးလို့ရပါတယ်။ app ရဲ့ 30 စက္ကန့် refresh က server ကို ပြန်ခေါ်တာ မဟုတ်ဘဲ UI ကို ပြန်ဆွဲပြတာသာ ဖြစ်ပါတယ်။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">🛡</div>
+      <h4>လက်ခံသူ နာမည်ကို အမြဲပြတယ်</h4>
+      <p>Transfer မျက်နှာစာမှာ လက်ခံသူရဲ့ နာမည်ကို အမြဲ ပြပါတယ်။ ဖုန်းနံပါတ် မှားမိမို့ ငွေလွှဲမှားမိတာကို ကာကွယ်ပေးနိုင်တဲ့ နောက်ဆုံး အာမခံချက် ဖြစ်ပါတယ်။</p>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="ico">ℹ️</div>
+    <div>
+      <h4>“ကိုယ့်အကောင့်ကို ကိုယ်တိုင် လွှဲလို့မရပါ” error အကြောင်း သိထားရန်</h4>
+      <p>ကိုယ့် နံပါတ်နဲ့ ဖန်တီးထားတဲ့ QR (သို့) ကိုယ့် app ရဲ့ Receive QR ကို ကိုယ့် KBZPay အကောင့်ကနေ ကိုယ်တိုင် scan မိရင် ဒီ error ပေါ်ပါတယ်။ ဒါက QR မအလုပ်လုပ်တာ <b>မဟုတ်ပါဘူး</b> — server က QR ထဲက ဖုန်းနံပါတ်ကို ဖတ်ပြီး အကောင့်ကို အတိအကျ ရှာတွေ့ပြီးသားဆိုတဲ့ လက္ခဏာသာ ဖြစ်ပါတယ်။ အခြား အကောင့်တစ်ခုကနေ scan ရင် Transfer မျက်နှာစာ ပုံမှန် ပေါ်လာပါတယ်။</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ၅ ================= -->
+<section class="section" id="s5" data-num="05">
+  <div class="sec-head">
+    <div class="sec-num">၅</div>
+    <div>
+      <h2>အရေးကြီး သတိထားစရာများ</h2>
+      <div class="sec-sub">မဖြစ်မနေ ဖတ်ပါ</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="callout warn">
+      <div class="ico">⚠️</div>
+      <div>
+        <h4>ဂဏန်း ၁၀ လုံး နံပါတ်များ (MPT ဟောင်း)</h4>
+        <p>ဂဏန်း ၁၀ လုံး ဖြစ်နေရင် BCD က 5 bytes ဖြစ်သွားပြီး payload လည်း 41 bytes ဖြစ်သွားပါမယ်။ server က ဒီအရှည်ကို လက်ခံမလား ဆိုတာ <b>မစမ်းသပ်ရသေးပါဘူး</b> — bot မတည်ဆောက်ခင် အရင်စမ်းကြည့်ဖို့ လိုပါမယ်။</p>
+      </div>
+    </div>
+    <div class="callout warn">
+      <div class="ico">⚠️</div>
+      <div>
+        <h4>Scan ပြီးတိုင်း နာမည် ပြန်စစ်ပါ</h4>
+        <p>Transfer မျက်နှာစာ ပေါ်လာတဲ့ လက်ခံသူရဲ့ နာမည်က နောက်ဆုံး safety net ပါ။ QR ဘယ်လောက် သေချာနေနေ — နာမည် မမှန်ရင် ငွေ မလွှဲပါနဲ့။</p>
+      </div>
+    </div>
+    <div class="callout danger">
+      <div class="ico">⛔</div>
+      <div>
+        <h4>ရည်ရွယ်ချက် အပြင်ဘက် မသုံးပါနဲ့</h4>
+        <p>ဒီနည်းလမ်းက ငွေလွှဲတဲ့ business တွေမှာ ဖုန်းနံပါတ် မှားတတ်တာ (typo) လျှော့ချဖို့အတွက်သာ ဖြစ်ပါတယ်။ အခြား ရည်ရွယ်ချက်နဲ့ အသုံးချခြင်းကို ရှောင်ကြဉ်ပါ။</p>
+      </div>
+    </div>
+    <div class="callout info">
+      <div class="ico">ℹ️</div>
+      <div>
+        <h4>QR ကို မြင်သူတိုင်း လုပ်နိုင်တာက ငွေပို့ရုံပါ</h4>
+        <p>QR ထဲက အကောင့်နံပါတ်ကို ဘယ်သူ့ကိုမဆို သိသွားစေနိုင်ပေမယ့် သူတို့ လုပ်နိုင်တာက အဲ့ဒီ အကောင့်ကို ငွေပို့လိုက်ရုံပါပဲ — အကောင့်ကနေ ငွေထုတ်ယူလို့ မရပါဘူး။</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ၆ ================= -->
+<section class="section" id="s6" data-num="06">
+  <div class="sec-head">
+    <div class="sec-num">၆</div>
+    <div>
+      <h2>နောက်အဆင့် — Telegram Bot အစီအစဉ်</h2>
+      <div class="sec-sub">aiogram + qrcode</div>
+    </div>
+  </div>
+
+  <p>ဒီ format ကို အသုံးချပြီး — ဖုန်းနံပါတ် ပို့လိုက်ရင် KBZPay QR ပြန်ပေးမယ့် Telegram bot လေး တည်ဆောက်ဖို့ စီစဉ်ထားပါတယ်။ အလုပ်လုပ်ပုံက ဒီလိုလေးပါ —</p>
+
+  <div class="chat">
+    <div class="chat-row user">
+      <div class="bubble">09960476738</div>
+      <div class="chat-who">အသုံးပြုသူ → Bot</div>
+    </div>
+    <div class="chat-row bot">
+      <div class="bubble">🖼 KBZPay QR PNG<small>scan ပြီး နာမည် အတည်ပြုပါ</small></div>
+      <div class="chat-who">Bot → အသုံးပြုသူ</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="mini">
+      <div class="m-ico">🛠</div>
+      <h4>နည်းပညာ Stack</h4>
+      <p>Python — <span class="mono">aiogram</span> (Telegram) + <span class="mono">qrcode</span> (PNG)။ VPS လေးတစ်ခုမှာ အမြဲတန်း စောင့်ထားမှာ ပါ။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">🔢</div>
+      <h4>နံပါတ် စစ်ဆေးမှု</h4>
+      <p><code>09</code> နဲ့ စမှု၊ ဂဏန်းအရေအတွက် (10/11)၊ operator prefix စစ်ဆေးမှုတွေ ထည့်သွင်းမယ်။ ဂဏန်း ၁၀ လုံး format ကို စမ်းပြီးမှ bot ထဲ ထည့်မယ်။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">🔒</div>
+      <h4>လုံခြုံရေး</h4>
+      <p>Bot ကို private (user whitelist) အနေနဲ့ပဲ ထားမှာ ဖြစ်ပြီး — ခွင့်ပြုထားတဲ့ အသုံးပြုသူတွေပဲ အသုံးချနိုင်မယ်။</p>
+    </div>
+    <div class="mini">
+      <div class="m-ico">📈</div>
+      <h4>အဆင့်ဆင့် တိုးချဲ့မယ်</h4>
+      <p>အရင်ဆုံး ဂဏန်း ၁၀ လုံး နံပါတ်ကို server လက်ခံမလား စမ်းသပ်ပြီးမှ — bot ရဲ့ လုပ်ဆောင်ချက်တွေကို တဖြည်းဖြည်း တိုးချဲ့သွားမှာ ပါ။</p>
+    </div>
+  </div>
+
+  <h3 id="refs">ကိုးကား — decoded APK ထဲက နေရာများ</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>ဖိုင်</th><th>ဘာကို တွေ့ရလဲ</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono-cell">smali_classes8/com/huawei/kbz/utils/<br>CommonUtil.smali:223</td>
+          <td><span class="mono">AddTimeStampToQRCode</span> — suffix (F + checksum + timestamp) ထည့်သွင်း တွက်ထုတ်တဲ့ နေရာ</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">smali_classes8/com/huawei/kbz/ui/scan/<br>ScanNewFragment.smali:207</td>
+          <td><span class="mono">analysisResult → ScanQRCode2</span> — scan ရတဲ့ string ကို server ကို raw အတိုင်း ပို့လိုက်တဲ့ နေရာ</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">smali_classes8/com/huawei/kbz/ui/scan/<br>fragment/ReceiveFragment.smali</td>
+          <td>ငွေလက်ခံ QR logic — static token၊ 30 စက္ကန့်တစ်ကြိမ် UI re-render</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">res/values-my-rMM/<br>strings.xml:657</td>
+          <td>“QRကုဒ် မမှန်ကန်ပါ။” error စာသား</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="foot-path">📁 Decoded APK ရှိရာနေရာ — /home/zixuan/Projects/zCode/kbz/decoded/</div>
+  <div class="foot-meta">
+    <span>KBZPay QR Format — Reverse Engineering မှတ်တမ်း · ၁ စက်တင်ဘာ ၂၀၂၆</span>
+    <span>ပညာရေးနဲ့ ကိုယ်ပိုင်လုပ်ငန်း အသုံးချမှုအတွက်သာ ရေးသားထားပါသည်</span>
+  </div>
+</footer>
+
+</div>
+
+<script>
+function copyCode(btn){
+  var pre = btn.closest('.code-block').querySelector('pre');
+  var text = pre.innerText;
+  function done(ok){
+    btn.textContent = ok ? '✓ ကူးယူပြီး' : 'ကူးယူမရပါ';
+    setTimeout(function(){ btn.textContent = 'ကူးယူ'; }, 1800);
+  }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e){}
+    document.body.removeChild(ta); done(ok);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ done(true); }, fallback);
+  } else { fallback(); }
+}
+</script>
+</body>
+</html>
