@@ -24,9 +24,10 @@ ASK_PHONE = {
 NO_PROVIDER = "Please choose a provider first. 👇"
 
 QR_CAPTION = (
-    "📷 Scan this with <b>{label}</b>\n"
+    "📷 Scan with <b>{label}</b>\n"
     "Number: <code>{phone}</code>\n\n"
-    "⚠️ Always check the recipient's name on the confirmation screen before sending money."
+    "⚠️ Verify recipient name before sending.\n"
+    "<i>Note: This bot does not check if the account exists. Please verify recipient details yourself.</i>"
 )
 
 LEGACY_WARNING = "10-digit numbers are not fully verified yet — double-check!"
