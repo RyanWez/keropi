@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -13,3 +13,8 @@ router = Router()
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.reply(texts.WELCOME, reply_markup=provider_keyboard())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.reply(texts.HELP, reply_markup=provider_keyboard())

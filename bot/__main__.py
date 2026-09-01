@@ -6,6 +6,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+from aiogram.types import BotCommand
+
 from bot import config
 from bot.handlers import setup
 
@@ -20,6 +22,11 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(setup())
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Start bot & choose provider"),
+        BotCommand(command="help", description="How to use this bot"),
+    ])
 
     me = await bot.get_me()
     logger.info("Starting @%s (polling)", me.username)

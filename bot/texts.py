@@ -30,3 +30,12 @@ QR_CAPTION = (
 )
 
 LEGACY_WARNING = "10-digit numbers are not fully verified yet — double-check!"
+
+HELP = (
+    "📖 <b>How to use Pay QR Generator</b>\n\n"
+    "1️⃣ Choose your payment provider: <b>KBZ Pay</b> or <b>WavePay</b>.\n"
+    "2️⃣ Send the recipient's Myanmar mobile number (e.g. <code>09***6738</code>).\n"
+    "3️⃣ The bot will instantly return a branded, high-resolution QR card.\n"
+    "4️⃣ Open your KBZPay or WavePay app and scan the QR code to transfer directly without typing the number.\n\n"
+    "💡 You can switch providers anytime using the inline buttons below."
+)
