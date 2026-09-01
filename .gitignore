@@ -12,9 +12,11 @@ env/
 # Configuration & Secrets
 .env
 
-# Application logs
+# Application logs & databases
 bot.log
 *.log
+*.db
+*.sqlite3
 
 # IDE & Editor files
 .vscode/

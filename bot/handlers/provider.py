@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery
 
 from bot import texts
 from bot.keyboards.provider_kb import CALLBACK_PREFIX, provider_keyboard
+from bot.services.db import set_user_provider
 from bot.services.providers import Provider
 from bot.states import QrFlow
 
@@ -24,7 +25,8 @@ async def select_provider(callback: CallbackQuery, state: FSMContext) -> None:
 
     await state.set_state(QrFlow.waiting_phone)
     await state.update_data(provider=provider.value)
-    logger.info("chat %s selected provider %s", callback.message.chat.id, provider.value)
+    set_user_provider(callback.from_user.id, provider.value)
+    logger.info("user %s selected provider %s", callback.from_user.id, provider.value)
 
     await callback.message.answer(
         texts.ASK_PHONE[provider.value],
