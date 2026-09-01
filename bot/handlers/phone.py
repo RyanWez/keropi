@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
+from aiogram.utils.chat_action import ChatActionSender
 
 from bot import texts
 from bot.keyboards.provider_kb import provider_keyboard
@@ -37,17 +38,18 @@ async def phone_to_qr(message: Message, state: FSMContext) -> None:
         await message.reply(error, reply_markup=provider_keyboard())
         return
 
-    provider = Provider(provider_value)
-    payload = build_payload(provider, phone)
-    warning = texts.LEGACY_WARNING if is_legacy_short(phone) else None
-    png = render_qr_card(provider, phone, payload, warning=warning)
-    logger.info("chat %s: QR for %s (%s)", message.chat.id, phone, provider.value)
+    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        provider = Provider(provider_value)
+        payload = build_payload(provider, phone)
+        warning = texts.LEGACY_WARNING if is_legacy_short(phone) else None
+        png = render_qr_card(provider, phone, payload, warning=warning)
+        logger.info("chat %s: QR for %s (%s)", message.chat.id, phone, provider.value)
 
-    await message.reply_photo(
-        BufferedInputFile(png, filename=f"{provider.value}_{phone}.png"),
-        caption=texts.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone),
-        reply_markup=provider_keyboard(active=provider),
-    )
+        await message.reply_photo(
+            BufferedInputFile(png, filename=f"{provider.value}_{phone}.png"),
+            caption=texts.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone),
+            reply_markup=provider_keyboard(active=provider),
+        )
 
 
 @router.message(StateFilter(QrFlow.waiting_phone))
