@@ -5,25 +5,22 @@ from aiogram.types import Message
 
 from bot import texts
 from bot.keyboards.provider_kb import provider_keyboard
-from bot.services.db import get_user_provider
 from bot.services.providers import Provider
 
 router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
-    saved = get_user_provider(message.from_user.id) if message.from_user else None
-    active = Provider(saved) if saved else None
-    if saved:
-        await state.update_data(provider=saved)
+async def cmd_start(
+    message: Message, state: FSMContext, provider: Provider | None
+) -> None:
+    if provider is not None:
+        await state.update_data(provider=provider.value)
     else:
         await state.clear()
-    await message.reply(texts.WELCOME, reply_markup=provider_keyboard(active=active))
+    await message.reply(texts.WELCOME, reply_markup=provider_keyboard(active=provider))
 
 
 @router.message(Command("help"))
-async def cmd_help(message: Message) -> None:
-    saved = get_user_provider(message.from_user.id) if message.from_user else None
-    active = Provider(saved) if saved else None
-    await message.reply(texts.HELP, reply_markup=provider_keyboard(active=active))
+async def cmd_help(message: Message, provider: Provider | None) -> None:
+    await message.reply(texts.HELP, reply_markup=provider_keyboard(active=provider))

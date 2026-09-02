@@ -13,7 +13,7 @@ import base64
 
 import pytest
 
-from bot.services.kbzpay_qr import HEAD, TAIL, kbzpay_qr_string
+from bot.services.kbzpay_qr import HEAD, TAIL, KbzPayPayloadError, kbzpay_qr_string
 
 # 1 September 2026 15:56:17 MMT. Digit sum 71, 71 % 64 = 7 -> alphabet[7] = "H".
 FROZEN_TS_MS = 1788254777618
@@ -94,3 +94,36 @@ def test_default_timestamp_is_used_when_omitted():
     qr = kbzpay_qr_string("09123456789")
     assert qr.startswith("hQZLQlpQYXlhQE8C8FACEFECMTFXFgkSNFZ4nSYJEBAfnwgEAQGfJAEw")
     assert qr.endswith("==")
+
+
+@pytest.mark.parametrize(
+    ("phone", "expected_bcd"),
+    [
+        ("09123456789", "09123456789d"),
+        ("0912345678", "0912345678dd"),
+        ("091234567", "091234567ddd"),
+    ],
+)
+def test_short_numbers_pad_the_field_instead_of_shifting_the_tail(phone, expected_bcd):
+    """Whatever the digit count, the field stays 6 bytes and TAIL stays put.
+
+    Before padding was added, a 10-digit number produced a 41-byte TLV and the
+    server read the first tail byte as part of the number: 0996047673 came back
+    as 099604767326.
+    """
+    tlv = _tlv_of(kbzpay_qr_string(phone, ts_ms=FROZEN_TS_MS))
+    assert len(tlv) == TLV_LENGTH
+    assert tlv[PHONE_FIELD].hex() == expected_bcd
+    assert tlv[28:] == TAIL
+
+
+def test_too_many_digits_is_refused():
+    with pytest.raises(KbzPayPayloadError):
+        kbzpay_qr_string("0912345678901")
+
+
+@pytest.mark.parametrize("phone", ["09960476\u00b2\u00b23", "09abc456789", ""])
+def test_non_ascii_digits_are_refused_not_crashed(phone):
+    """int(..., 16) used to raise a bare ValueError deep inside the encoder."""
+    with pytest.raises(KbzPayPayloadError):
+        kbzpay_qr_string(phone)

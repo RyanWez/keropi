@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
@@ -45,7 +44,7 @@ async def main() -> None:
         BotCommand(command="help", description="How to use this bot"),
     ])
 
-    port = int(os.getenv("PORT", "0"))
+    port = config.PORT
     runner: web.AppRunner | None = None
     if port > 0:
         runner = await start_web_server(port)

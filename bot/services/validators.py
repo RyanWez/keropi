@@ -1,56 +1,131 @@
-import re
+"""Myanmar mobile number normalisation and validation.
 
+Length rules come from the Posts and Telecommunications Department's
+Telecommunications Numbering Plan (2017): the mobile NDC is 9 and subscriber
+numbers are 7, 8 or 9 digits, so a national number starting "09" is 9, 10 or 11
+digits long. Numbers shorter than that are landlines, not mobiles. Since 2014
+every newly issued mobile number is 11 digits, but the older 9- and 10-digit
+ranges were never withdrawn and are still in service.
+
+Errors are returned as reason codes rather than prose so that the wording lives
+in ``bot.texts`` and can be translated later.
+"""
+
+import re
+from dataclasses import dataclass
+from enum import Enum
+
+from bot import config
 from bot.services.providers import Provider
 
+#: A national-format Myanmar mobile number: "09" followed by 7, 8 or 9 digits.
+MOBILE_RE = re.compile(r"09\d{7,9}")
 
-def normalize(raw: str) -> str:
-    """Remove spaces, hyphens, parentheses, and plus signs."""
-    return re.sub(r"[\s\-()+]", "", raw.strip())
+#: Total digit counts that MOBILE_RE accepts, for building error messages.
+VALID_LENGTHS = (9, 10, 11)
 
+#: KBZPay's BCD field holds exactly this many digits.
+KBZPAY_REQUIRED_LENGTH = 11
 
-def validate(raw: str) -> tuple[str | None, str | None]:
-    """Return (phone, error). Exactly one of the two is not None.
-    
-    Accepts numbers only with length between 5 and 11 digits.
-    """
-    cleaned = raw.strip()
-    if not cleaned:
-        return None, "Please enter a valid phone number (5 to 11 digits)."
-
-    phone = normalize(raw)
-
-    # 1. Strictly digits only
-    if not phone.isdigit():
-        return (
-            None,
-            "⚠️ Numbers only, please. Letters or special symbols are not allowed.\n"
-            "Example: <code>09***6738</code>",
-        )
-
-    # 2. Auto-normalize international Myanmar prefix (e.g. +959... -> 09...)
-    if phone.startswith("959") and len(phone) in (11, 12, 13):
-        phone = "0" + phone[2:]
-    elif phone.startswith("95") and len(phone) > 10:
-        phone = "0" + phone[2:]
-
-    # 3. Digit length check (minimum 7 to maximum 11 digits)
-    if len(phone) < 7:
-        return (
-            None,
-            f"⚠️ Number is too short ({len(phone)} digits). Please enter between 7 and 11 digits.",
-        )
-    if len(phone) > 11:
-        return (
-            None,
-            f"⚠️ Number is too long ({len(phone)} digits). Please enter between 7 and 11 digits.",
-        )
-
-    return phone, None
-
-
-def is_legacy_short(phone: str) -> bool:
-    """Old numbers or short numbers that might require user verification."""
-    return len(phone) <= 10
-
+_SEPARATORS_RE = re.compile(r"[\s\-()./]+")
+_ASCII_DIGITS_RE = re.compile(r"[0-9]+")
 
 PROVIDER_LABELS = {Provider.KBZPAY: "KBZ Pay", Provider.WAVEPAY: "WavePay"}
+
+
+class Reason(str, Enum):
+    EMPTY = "empty"
+    NOT_DIGITS = "not_digits"
+    NOT_MYANMAR_MOBILE = "not_myanmar_mobile"
+    KBZPAY_NEEDS_11 = "kbzpay_needs_11"
+
+
+@dataclass(frozen=True, slots=True)
+class PhoneCheck:
+    """Either ``phone`` is set, or ``reason`` is."""
+
+    phone: str | None = None
+    reason: Reason | None = None
+    #: Digit count of the normalised candidate, for "you sent N digits" messages.
+    digits: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return self.phone is not None
+
+
+def strip_separators(raw: str) -> str:
+    """Drop the punctuation people type inside phone numbers."""
+    return _SEPARATORS_RE.sub("", raw.strip())
+
+
+def normalize(raw: str) -> str | None:
+    """Return a national-format ``09…`` number, or None if the input cannot be one.
+
+    Handles the international forms ``+959…``, ``00959…``, ``959…`` and ``9509…``,
+    and supplies a missing trunk zero. An explicit ``+`` or ``00`` is treated as a
+    country-code marker; without one, a leading ``9`` is read as a dropped trunk
+    zero. That distinction matters: ``9591234567`` is otherwise ambiguous between
+    ``09591234567`` and ``091234567``, and honouring the user's own prefix avoids
+    guessing which account they meant.
+    """
+    text = raw.strip()
+    explicit_international = text.startswith("+")
+
+    digits = strip_separators(text.lstrip("+"))
+    if not digits or not _ASCII_DIGITS_RE.fullmatch(digits):
+        return None
+
+    if digits.startswith("00"):
+        explicit_international = True
+        digits = digits[2:]
+
+    candidates: list[str] = []
+    if explicit_international:
+        if digits.startswith("95"):
+            rest = digits[2:]
+            candidates.append(rest if rest.startswith("0") else "0" + rest)
+        candidates.append(digits)
+    else:
+        candidates.append(digits)
+        if digits.startswith("9") and not digits.startswith("09"):
+            candidates.append("0" + digits)
+        if digits.startswith("95"):
+            rest = digits[2:]
+            candidates.append(rest if rest.startswith("0") else "0" + rest)
+
+    for candidate in candidates:
+        if MOBILE_RE.fullmatch(candidate):
+            return candidate
+    return None
+
+
+def validate(raw: str, provider: Provider) -> PhoneCheck:
+    """Normalise ``raw`` and check it against the provider's own constraints."""
+    if not raw or not raw.strip():
+        return PhoneCheck(reason=Reason.EMPTY)
+
+    digits = strip_separators(raw.lstrip("+").strip())
+    if not digits:
+        return PhoneCheck(reason=Reason.EMPTY)
+
+    # ``str.isdigit()`` is true for Unicode digits such as "²" and "٩", which then
+    # blow up inside the BCD encoder. Only ASCII 0-9 may pass.
+    if not _ASCII_DIGITS_RE.fullmatch(digits):
+        return PhoneCheck(reason=Reason.NOT_DIGITS)
+
+    phone = normalize(raw)
+    if phone is None:
+        return PhoneCheck(reason=Reason.NOT_MYANMAR_MOBILE, digits=len(digits))
+
+    if provider is Provider.KBZPAY and len(phone) != KBZPAY_REQUIRED_LENGTH:
+        # Read through the module so tests and a restart-free config change both work.
+        if not config.KBZPAY_ALLOW_SHORT_NUMBERS:
+            return PhoneCheck(reason=Reason.KBZPAY_NEEDS_11, digits=len(phone))
+
+    return PhoneCheck(phone=phone, digits=len(phone))
+
+
+def needs_padding_warning(provider: Provider, phone: str) -> bool:
+    """True when the QR relies on the unverified short-number padding."""
+    return provider is Provider.KBZPAY and len(phone) != KBZPAY_REQUIRED_LENGTH
