@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: keropi-bot
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot
+    # The bot uses long polling; this endpoint exists only because a Render web
+    # service must bind a port, and because an external pinger needs something to
+    # hit. Do not point the pinger at /robots.txt: Render answers that itself
+    # without waking a sleeping instance.
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: OWNER_ID
+        sync: false
+      - key: QR_CACHE_CHAT_ID
+        sync: false
+      # Free instances get 512 MB and a shared CPU share.
+      - key: RENDER_WORKERS
+        value: "3"
+      - key: MAX_CONCURRENT_UPDATES
+        value: "24"
+      - key: THROTTLE_SECONDS
+        value: "2"
+      # Off until a real legacy-number Receive QR confirms the padding rule.
+      - key: KBZPAY_ALLOW_SHORT_NUMBERS
+        value: "false"
