@@ -1,6 +1,7 @@
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
 
@@ -8,7 +9,8 @@ from bot import texts
 from bot.keyboards.provider_kb import provider_keyboard
 from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.providers import Provider
-from bot.services.renderer import render_qr_card
+from bot.services.qr_cache import cache
+from bot.services.renderer import render_qr_card_async
 from bot.services.validators import PROVIDER_LABELS, needs_padding_warning, validate
 from bot.services.wavepay_qr import wavepay_qr_string
 
@@ -42,9 +44,22 @@ async def phone_to_qr(
         return
 
     phone = check.phone
-    payload = build_payload(provider, phone)
     warning = texts.PADDING_WARNING if needs_padding_warning(provider, phone) else None
-    png = render_qr_card(provider, phone, payload, warning=warning)
+    caption = texts.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone)
+    keyboard = provider_keyboard(active=provider)
+
+    cached = cache.get(provider, phone, warning)
+    if cached is not None:
+        try:
+            await message.reply_photo(cached, caption=caption, reply_markup=keyboard)
+            return
+        except TelegramBadRequest:
+            # A file_id Telegram no longer accepts. Drop it and render afresh.
+            logger.warning("stale file_id for %s (%s)", phone, provider.value)
+            cache.discard(provider, phone, warning)
+
+    payload = build_payload(provider, phone)
+    png = await render_qr_card_async(provider, phone, payload, warning=warning)
     logger.info(
         "user %s: QR for %s (%s)",
         message.from_user.id if message.from_user else "unknown",
@@ -52,11 +67,13 @@ async def phone_to_qr(
         provider.value,
     )
 
-    await message.reply_photo(
+    sent = await message.reply_photo(
         BufferedInputFile(png, filename=f"{provider.value}_{phone}.png"),
-        caption=texts.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone),
-        reply_markup=provider_keyboard(active=provider),
+        caption=caption,
+        reply_markup=keyboard,
     )
+    if sent.photo:
+        cache.put(provider, phone, sent.photo[-1].file_id, warning)
 
 
 @router.message()

@@ -44,6 +44,26 @@ OWNER_ID = _int("OWNER_ID", 0)
 # legacy-number Receive QR has been decoded and the rule confirmed.
 KBZPAY_ALLOW_SHORT_NUMBERS = _flag("KBZPAY_ALLOW_SHORT_NUMBERS", default=False)
 
+# Card rendering is CPU work (Pillow, roughly 30 ms and ~10 MB peak per card), so it
+# runs in a small thread pool rather than on the event loop. Keep this low: Render's
+# free instance has 512 MB and an unpublished CPU share, and asyncio.to_thread's
+# default pool would open dozens of workers.
+RENDER_WORKERS = _int("RENDER_WORKERS", 3)
+
+# Ceiling on updates processed at once. aiogram acquires this semaphore inside the
+# polling loop, so hitting the limit slows getUpdates instead of queueing tasks in
+# memory.
+MAX_CONCURRENT_UPDATES = _int("MAX_CONCURRENT_UPDATES", 24)
+
+# Per-user cooldown in seconds. Telegram allows a bot about 30 messages per second
+# overall, and a 429 stalls the bot for *everyone*, so this exists to stop one
+# user's burst from degrading the service rather than to keep anybody out.
+THROTTLE_SECONDS = float(os.getenv("THROTTLE_SECONDS", "2") or 2)
+
+# How many rendered cards to remember as Telegram file_ids, so a repeat number is
+# answered without rendering or uploading again.
+QR_CACHE_SIZE = _int("QR_CACHE_SIZE", 2000)
+
 
 def setup_logging() -> None:
     fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")

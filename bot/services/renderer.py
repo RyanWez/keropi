@@ -1,4 +1,15 @@
+"""Renders the branded QR card.
+
+Layout is plain top-to-bottom: accent bar, provider name, QR, recipient number,
+and an optional warning line. Fonts are vendored under bot/assets/fonts so the
+output is identical everywhere and a slim container without system fonts still
+works.
+"""
+
+import asyncio
 import io
+import logging
+from functools import lru_cache
 from pathlib import Path
 
 import qrcode
@@ -7,16 +18,28 @@ from qrcode.constants import ERROR_CORRECT_H
 
 from bot.services.providers import Provider
 
-FONT_BOLD = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-FONT_MONO_BOLD = Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf")
+logger = logging.getLogger(__name__)
 
-# Card layout in pixels at 4x scale; final image is downscaled for smooth edges.
-SCALE = 4
-CARD_WIDTH = 900 * SCALE // 4
+_ASSETS = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+
+# First existing path wins; the vendored copies come first so behaviour does not
+# depend on what the host image happens to ship.
+SANS_BOLD_CANDIDATES = (
+    _ASSETS / "DejaVuSans-Bold.ttf",
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+)
+MONO_BOLD_CANDIDATES = (
+    _ASSETS / "DejaVuSansMono-Bold.ttf",
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"),
+)
+
+CARD_WIDTH = 900
 PADDING = 48
+GAP = 36
 TITLE_SIZE = 56
 NUMBER_SIZE = 40
 HINT_SIZE = 24
+ACCENT_BAR_HEIGHT = 10
 
 PROVIDER_STYLE = {
     Provider.KBZPAY: {
@@ -31,76 +54,124 @@ PROVIDER_STYLE = {
     },
 }
 
-
-def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(path), size)
+WARNING_COLOR = (200, 60, 40)
 
 
-def render_qr_card(provider: Provider, phone: str, payload: str, warning: str | None = None) -> bytes:
+@lru_cache(maxsize=8)
+def _font(candidates: tuple[Path, ...], size: int) -> ImageFont.FreeTypeFont:
+    for path in candidates:
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
+    # Better a card with small text than no card at all.
+    logger.warning("no font found in %s, falling back to the PIL default", candidates)
+    return ImageFont.load_default(size)
+
+
+def _wrap(
+    text: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw
+) -> list[str]:
+    """Greedy word wrap, so a longer warning cannot run off the edge of the card."""
+    words = text.split()
+    if not words:
+        return []
+
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if draw.textlength(candidate, font=font) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def render_qr_card(
+    provider: Provider, phone: str, payload: str, warning: str | None = None
+) -> bytes:
     """Render the branded QR card and return PNG bytes."""
     style = PROVIDER_STYLE[provider]
 
     qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, box_size=12, border=2)
     qr.add_data(payload)
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color=style["qr_color"], back_color="white").convert("RGB")
+    qr_img = qr.make_image(
+        fill_color=style["qr_color"], back_color="white"
+    ).convert("RGB")
     # Short payloads (WavePay) produce tiny QRs — upscale to fill the card.
     target = CARD_WIDTH - PADDING * 2
     if qr_img.width < target:
         qr_img = qr_img.resize((target, target), Image.NEAREST)
 
-    title_font = _font(FONT_BOLD, TITLE_SIZE)
-    number_font = _font(FONT_MONO_BOLD, NUMBER_SIZE)
-    hint_font = _font(FONT_BOLD, HINT_SIZE)
+    title_font = _font(SANS_BOLD_CANDIDATES, TITLE_SIZE)
+    number_font = _font(MONO_BOLD_CANDIDATES, NUMBER_SIZE)
+    hint_font = _font(SANS_BOLD_CANDIDATES, HINT_SIZE)
 
-    tmp = ImageDraw.Draw(qr_img)
-    title_box = tmp.textbbox((0, 0), style["label"], font=title_font)
-    number_box = tmp.textbbox((0, 0), phone, font=number_font)
-    warn_text = warning or ""
-    warn_box = tmp.textbbox((0, 0), warn_text, font=hint_font) if warn_text else None
-
-    gap = 36
     width = max(CARD_WIDTH, qr_img.width + PADDING * 2)
+    text_width = width - PADDING * 2
+
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    warning_lines = _wrap(warning, hint_font, text_width, measure) if warning else []
+    line_height = HINT_SIZE + 6
+
+    title_box = measure.textbbox((0, 0), style["label"], font=title_font)
+    number_box = measure.textbbox((0, 0), phone, font=number_font)
+    title_height = title_box[3] - title_box[1]
+    number_height = number_box[3] - number_box[1]
+
     height = (
         PADDING
-        + (title_box[3] - title_box[1])
-        + gap
+        + title_height
+        + GAP
         + qr_img.height
-        + gap
-        + (number_box[3] - number_box[1])
-        + (gap // 2 + (warn_box[3] - warn_box[1]) if warn_text else 0)
+        + GAP
+        + number_height
+        + (GAP // 2 + line_height * len(warning_lines) if warning_lines else 0)
         + PADDING
     )
 
     card = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(card)
-    # Colored accent bar across the top of the card.
-    draw.rectangle([0, 0, width, 10], fill=style["color"])
+    draw.rectangle([0, 0, width, ACCENT_BAR_HEIGHT], fill=style["color"])
 
-    def center(text: str, font: ImageFont.FreeTypeFont, y: int) -> None:
+    def centered(text: str, font: ImageFont.ImageFont, top: int, fill) -> None:
         box = draw.textbbox((0, 0), text, font=font)
-        draw.text(((width - (box[2] - box[0])) // 2 - box[0], y), text, font=font, fill="black")
+        x = (width - (box[2] - box[0])) // 2 - box[0]
+        draw.text((x, top - box[1]), text, font=font, fill=fill)
 
-    draw.text(
-        ((width - (title_box[2] - title_box[0])) // 2, PADDING),
-        style["label"],
-        font=title_font,
-        fill=style["color"],
-    )
+    y = PADDING
+    centered(style["label"], title_font, y, style["color"])
+    y += title_height + GAP
 
-    y = PADDING + (title_box[3] - title_box[1]) + gap
     card.paste(qr_img, ((width - qr_img.width) // 2, y))
-    y += qr_img.height + gap
+    y += qr_img.height + GAP
 
-    center(phone, number_font, y)
-    y += number_box[3] - number_box[1]
-    if warn_text:
-        y += gap // 2
-        box = draw.textbbox((0, 0), warn_text, font=hint_font)
-        draw.text(
-            ((width - (box[2] - box[0])) // 2, y), warn_text, font=hint_font, fill=(200, 60, 40)
-        )
+    centered(phone, number_font, y, "black")
+    y += number_height
+
+    if warning_lines:
+        y += GAP // 2
+        for line in warning_lines:
+            centered(line, hint_font, y, WARNING_COLOR)
+            y += line_height
 
     buf = io.BytesIO()
     card.save(buf, format="PNG")
     return buf.getvalue()
+
+
+async def render_qr_card_async(
+    provider: Provider, phone: str, payload: str, warning: str | None = None
+) -> bytes:
+    """Render off the event loop.
+
+    Pillow work is ~30 ms of CPU per card. Run inline, it blocks every other update
+    for that long; concurrent users end up queued behind each other.
+    """
+    from bot.services.render_pool import run_in_render_pool
+
+    return await run_in_render_pool(
+        render_qr_card, provider, phone, payload, warning=warning
+    )

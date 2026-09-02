@@ -11,28 +11,57 @@ from datetime import datetime, timezone
 
 import pytest
 from aiogram import Dispatcher
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage, SendPhoto
-from aiogram.types import Chat, Message, Update, User
+from aiogram.types import BufferedInputFile, Chat, Message, PhotoSize, Update, User
 
 from bot.handlers import setup
+from bot.services import renderer
 from bot.services.providers import Provider
+from bot.services.qr_cache import cache
 
 CHAT_ID = 5_000_001
 USER_ID = 5_000_002
 
 
 class RecordingBot:
-    """Stands in for Bot: records calls instead of talking to Telegram."""
+    """Stands in for Bot: records calls and returns plausible responses.
+
+    Returning a real Message for sends matters — the handler reads
+    ``sent.photo[-1].file_id`` to populate the file_id cache, and a stub that
+    answered ``True`` would raise there and have the failure hidden by the
+    error handler.
+    """
 
     id = 999
     session = None
 
     def __init__(self) -> None:
         self.calls: list[object] = []
+        #: file_ids Telegram should pretend it no longer recognises.
+        self.reject_file_ids: set[str] = set()
+        self._next_id = 100
 
     async def __call__(self, method, request_timeout=None):  # noqa: ANN001, ARG002
         self.calls.append(method)
+        self._next_id += 1
+        if isinstance(method, SendPhoto):
+            if isinstance(method.photo, str) and method.photo in self.reject_file_ids:
+                raise TelegramBadRequest(method=method, message="wrong file identifier")
+            return _message(
+                self._next_id,
+                photo=[
+                    PhotoSize(
+                        file_id=f"file-{self._next_id}",
+                        file_unique_id=f"uniq-{self._next_id}",
+                        width=900,
+                        height=1055,
+                    )
+                ],
+            )
+        if isinstance(method, SendMessage):
+            return _message(self._next_id, text=method.text)
         return True
 
     @property
@@ -44,17 +73,18 @@ class RecordingBot:
         return [c for c in self.calls if isinstance(c, SendPhoto)]
 
 
-def _update(text: str, message_id: int = 1) -> Update:
-    return Update(
-        update_id=message_id,
-        message=Message(
-            message_id=message_id,
-            date=datetime.now(timezone.utc),
-            chat=Chat(id=CHAT_ID, type="private"),
-            from_user=User(id=USER_ID, is_bot=False, first_name="Tester"),
-            text=text,
-        ),
+def _message(message_id: int, **kwargs) -> Message:
+    return Message(
+        message_id=message_id,
+        date=datetime.now(timezone.utc),
+        chat=Chat(id=CHAT_ID, type="private"),
+        from_user=User(id=USER_ID, is_bot=False, first_name="Tester"),
+        **kwargs,
     )
+
+
+def _update(text: str, message_id: int = 1) -> Update:
+    return Update(update_id=message_id, message=_message(message_id, text=text))
 
 
 @pytest.fixture(scope="module")
@@ -65,14 +95,22 @@ def dispatcher() -> Dispatcher:
 
 
 @pytest.fixture(autouse=True)
-def _isolate(dispatcher, tmp_path, monkeypatch):
-    """Fresh FSM per test, and no stored provider unless a test asks for one."""
+def _isolate(dispatcher, tmp_path, monkeypatch, caplog):
+    """Fresh FSM and cache per test, and no stored provider unless a test asks."""
     dispatcher.fsm.storage = MemoryStorage()
+    cache._entries.clear()
     monkeypatch.setattr("bot.services.db.DB_PATH", tmp_path / "test.db")
     monkeypatch.setattr("bot.services.db._initialised", None)
     monkeypatch.setattr(
         "bot.middlewares.provider_ctx.get_user_provider", lambda _uid: None
     )
+    yield
+    # The catch-all error handler swallows exceptions by design, which would let a
+    # broken handler pass as a green test. Only the error-handler test may log one.
+    if "expect_error" not in caplog.text:
+        assert not [r for r in caplog.records if r.levelname == "ERROR"], (
+            "a handler raised and the error handler hid it"
+        )
 
 
 @pytest.fixture
@@ -156,9 +194,9 @@ def test_the_error_handler_replies_when_a_handler_explodes(
     _select(monkeypatch, Provider.KBZPAY)
 
     def boom(*_args, **_kwargs):
-        raise RuntimeError("renderer exploded")
+        raise RuntimeError("expect_error: renderer exploded")
 
-    monkeypatch.setattr("bot.handlers.phone.render_qr_card", boom)
+    monkeypatch.setattr("bot.handlers.phone.render_qr_card_async", boom)
     _feed(dispatcher, bot, "09123456789")
 
     assert not bot.sent_photos
@@ -168,3 +206,40 @@ def test_the_error_handler_replies_when_a_handler_explodes(
 def test_help_lists_the_kbzpay_length_rule(dispatcher, bot):
     _feed(dispatcher, bot, "/help")
     assert "11-digit" in bot.sent_texts[0]
+
+
+def test_a_repeat_number_is_answered_from_the_file_id_cache(
+    dispatcher, bot, monkeypatch
+):
+    _select(monkeypatch, Provider.WAVEPAY)
+    renders = 0
+    original = renderer.render_qr_card
+
+    def counting(*args, **kwargs):
+        nonlocal renders
+        renders += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(renderer, "render_qr_card", counting)
+
+    _feed(dispatcher, bot, "09123456789")
+    _feed(dispatcher, bot, "09123456789")
+
+    assert renders == 1, "the second request should reuse the uploaded file_id"
+    first, second = bot.sent_photos
+    assert isinstance(first.photo, BufferedInputFile)
+    assert second.photo == "file-101"
+    assert len(cache) == 1
+
+
+def test_a_rejected_file_id_falls_back_to_rendering(dispatcher, bot, monkeypatch):
+    _select(monkeypatch, Provider.WAVEPAY)
+    cache.put(Provider.WAVEPAY, "09123456789", "file-that-telegram-forgot")
+    bot.reject_file_ids.add("file-that-telegram-forgot")
+
+    _feed(dispatcher, bot, "09123456789")
+
+    stale, fresh = bot.sent_photos
+    assert stale.photo == "file-that-telegram-forgot"
+    assert isinstance(fresh.photo, BufferedInputFile)
+    assert cache.get(Provider.WAVEPAY, "09123456789") == "file-102"

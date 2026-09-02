@@ -10,6 +10,8 @@ from aiogram.types import BotCommand
 
 from bot import config
 from bot.handlers import setup
+from bot.middlewares.retry_after import RetryAfterMiddleware
+from bot.middlewares.throttle import ThrottleMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -30,29 +32,50 @@ async def start_web_server(port: int) -> web.AppRunner:
     return runner
 
 
+def build_dispatcher() -> Dispatcher:
+    dp = Dispatcher(storage=MemoryStorage())
+    # Outer, so a throttled update is dropped before any filter, database read or
+    # render. Runs inside the dispatcher's own user-context middleware, which is
+    # what puts event_from_user in the data dict.
+    dp.update.outer_middleware(ThrottleMiddleware(cooldown=config.THROTTLE_SECONDS))
+    dp.include_router(setup())
+    return dp
+
+
 async def main() -> None:
     config.setup_logging()
     bot = Bot(
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(setup())
+    # Wraps every outgoing API call, so flood control is handled in one place.
+    bot.session.middleware(RetryAfterMiddleware())
+
+    dp = build_dispatcher()
 
     await bot.set_my_commands([
         BotCommand(command="start", description="Start bot & choose provider"),
         BotCommand(command="help", description="How to use this bot"),
     ])
 
-    port = config.PORT
     runner: web.AppRunner | None = None
-    if port > 0:
-        runner = await start_web_server(port)
+    if config.PORT > 0:
+        runner = await start_web_server(config.PORT)
 
     me = await bot.get_me()
-    logger.info("Starting @%s (polling)", me.username)
+    logger.info(
+        "Starting @%s (polling, max %s concurrent updates, %s render workers)",
+        me.username,
+        config.MAX_CONCURRENT_UPDATES,
+        config.RENDER_WORKERS,
+    )
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(
+            bot,
+            # Bounds in-flight updates. aiogram acquires the semaphore in the polling
+            # loop, so saturation slows getUpdates rather than piling up tasks.
+            tasks_concurrency_limit=config.MAX_CONCURRENT_UPDATES,
+        )
     finally:
         if runner:
             await runner.cleanup()
