@@ -18,12 +18,13 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.types import (
     BufferedInputFile,
     InlineQuery,
-    InlineQueryResultsButton,
     InlineQueryResultCachedPhoto,
+    InlineQueryResultsButton,
 )
 
 from bot import config, texts
 from bot.services.kbzpay_qr import kbzpay_qr_string
+from bot.services.languages import Language
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
 from bot.services.renderer import render_qr_card_async
@@ -38,10 +39,12 @@ CACHE_TIME = 60
 
 
 async def _result(
-    query: InlineQuery, provider: Provider, phone: str
+    query: InlineQuery, provider: Provider, phone: str, strings: texts.Strings
 ) -> InlineQueryResultCachedPhoto | None:
     """Build one result, uploading the card first if it isn't cached yet."""
-    warning = texts.PADDING_WARNING if needs_padding_warning(provider, phone) else None
+    warning = (
+        strings.PADDING_WARNING if needs_padding_warning(provider, phone) else None
+    )
     file_id = cache.get(provider, phone, warning)
 
     if file_id is None:
@@ -61,7 +64,8 @@ async def _result(
             )
         except TelegramAPIError:
             logger.warning(
-                "could not upload to QR_CACHE_CHAT_ID=%s", config.QR_CACHE_CHAT_ID,
+                "could not upload to QR_CACHE_CHAT_ID=%s",
+                config.QR_CACHE_CHAT_ID,
                 exc_info=True,
             )
             return None
@@ -75,14 +79,17 @@ async def _result(
         id=f"{provider.value}:{phone}",
         photo_file_id=file_id,
         title=label,
-        description=f"{label} QR for {phone}",
-        caption=texts.QR_CAPTION.format(label=label, phone=phone),
+        description=f"{label} · {phone}",
+        caption=strings.QR_CAPTION.format(label=label, phone=phone),
     )
 
 
 @router.inline_query()
-async def inline_qr(query: InlineQuery) -> None:
-    open_bot = InlineQueryResultsButton(text=texts.INLINE_OPEN_BOT, start_parameter="start")
+async def inline_qr(query: InlineQuery, lang: Language) -> None:
+    strings = texts.get(lang)
+    open_bot = InlineQueryResultsButton(
+        text=strings.INLINE_OPEN_BOT, start_parameter="start"
+    )
 
     if config.QR_CACHE_CHAT_ID == 0:
         logger.warning("inline mode used but QR_CACHE_CHAT_ID is not set")
@@ -92,8 +99,12 @@ async def inline_qr(query: InlineQuery) -> None:
     text = query.query.strip()
     if not text:
         await query.answer(
-            [], cache_time=CACHE_TIME, is_personal=True,
-            button=InlineQueryResultsButton(text=texts.INLINE_PROMPT, start_parameter="start"),
+            [],
+            cache_time=CACHE_TIME,
+            is_personal=True,
+            button=InlineQueryResultsButton(
+                text=strings.INLINE_PROMPT, start_parameter="start"
+            ),
         )
         return
 
@@ -106,13 +117,17 @@ async def inline_qr(query: InlineQuery) -> None:
     ]
     if not accepted:
         await query.answer(
-            [], cache_time=CACHE_TIME, is_personal=True,
-            button=InlineQueryResultsButton(text=texts.INLINE_BAD_NUMBER, start_parameter="start"),
+            [],
+            cache_time=CACHE_TIME,
+            is_personal=True,
+            button=InlineQueryResultsButton(
+                text=strings.INLINE_BAD_NUMBER, start_parameter="start"
+            ),
         )
         return
 
     built = await asyncio.gather(
-        *(_result(query, provider, phone) for provider, phone in accepted)
+        *(_result(query, provider, phone, strings) for provider, phone in accepted)
     )
     results = [result for result in built if result is not None]
     if not results:

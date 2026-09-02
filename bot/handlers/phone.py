@@ -7,8 +7,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
 
 from bot import texts
-from bot.keyboards.provider_kb import error_keyboard, provider_keyboard
+from bot.keyboards import error_keyboard, provider_keyboard
 from bot.services.kbzpay_qr import kbzpay_qr_string
+from bot.services.languages import Language
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
 from bot.services.renderer import render_qr_card_async
@@ -32,29 +33,33 @@ def build_payload(provider: Provider, phone: str) -> str:
 
 @router.message(F.text)
 async def phone_to_qr(
-    message: Message, state: FSMContext, provider: Provider | None
+    message: Message, state: FSMContext, provider: Provider | None, lang: Language
 ) -> None:
+    strings = texts.get(lang)
     if provider is None:
-        await message.reply(texts.NO_PROVIDER, reply_markup=provider_keyboard())
+        await message.reply(strings.NO_PROVIDER, reply_markup=provider_keyboard())
         return
 
     # Keep FSM state in sync so the next update skips the database lookup.
-    await state.update_data(provider=provider.value)
+    await state.update_data(provider=provider.value, lang=lang.value)
 
     check = validate(message.text or "", provider)
     if not check.ok:
         await message.reply(
-            texts.phone_error(check),
+            strings.phone_error(check),
             reply_markup=error_keyboard(
-                active=provider,
+                strings.CONTACT_LABEL,
+                provider,
                 offer_providers=texts.offers_provider_switch(check),
             ),
         )
         return
 
     phone = check.phone
-    warning = texts.PADDING_WARNING if needs_padding_warning(provider, phone) else None
-    caption = texts.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone)
+    warning = (
+        strings.PADDING_WARNING if needs_padding_warning(provider, phone) else None
+    )
+    caption = strings.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone)
     keyboard = provider_keyboard(active=provider)
 
     cached = cache.get(provider, phone, warning)
@@ -86,9 +91,13 @@ async def phone_to_qr(
 
 
 @router.message()
-async def not_text(message: Message, provider: Provider | None) -> None:
+async def not_text(message: Message, provider: Provider | None, lang: Language) -> None:
+    strings = texts.get(lang)
     if provider is None:
-        await message.reply(texts.NO_PROVIDER, reply_markup=provider_keyboard())
+        await message.reply(strings.NO_PROVIDER, reply_markup=provider_keyboard())
         return
 
-    await message.reply(texts.NOT_TEXT, reply_markup=error_keyboard(active=provider))
+    await message.reply(
+        strings.NOT_TEXT,
+        reply_markup=error_keyboard(strings.CONTACT_LABEL, provider),
+    )

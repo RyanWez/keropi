@@ -3,9 +3,13 @@
 import pytest
 
 from bot import config, texts
-from bot.keyboards.provider_kb import CONTACT_LABEL, error_keyboard, provider_keyboard
+from bot.keyboards import error_keyboard, language_keyboard, provider_keyboard
+from bot.services.languages import Language
 from bot.services.providers import Provider
 from bot.services.validators import Reason, validate
+
+EN = texts.get(Language.EN)
+MY = texts.get(Language.MY)
 
 
 def _rows(markup) -> list[list[str]]:
@@ -17,23 +21,37 @@ def test_provider_keyboard_is_unchanged():
     assert _rows(provider_keyboard(Provider.WAVEPAY)) == [["KBZ Pay", "✅ WavePay"]]
 
 
+def test_language_keyboard_uses_endonyms():
+    """A user who picked the wrong language must still recognise the way back."""
+    assert _rows(language_keyboard()) == [["English", "မြန်မာ"]]
+    assert _rows(language_keyboard(Language.MY)) == [["English", "✅ မြန်မာ"]]
+    assert _rows(language_keyboard(Language.EN)) == [["✅ English", "မြန်မာ"]]
+
+
 def test_error_keyboard_is_contact_only_by_default():
-    markup = error_keyboard(Provider.KBZPAY)
-    assert _rows(markup) == [[CONTACT_LABEL]]
+    markup = error_keyboard(EN.CONTACT_LABEL, Provider.KBZPAY)
+    assert _rows(markup) == [[EN.CONTACT_LABEL]]
     (button,) = markup.inline_keyboard[0]
     assert button.url == config.CONTACT_URL
     assert button.callback_data is None
 
 
 def test_error_keyboard_keeps_the_providers_when_asked():
-    markup = error_keyboard(Provider.KBZPAY, offer_providers=True)
-    assert _rows(markup) == [["✅ KBZ Pay", "WavePay"], [CONTACT_LABEL]]
+    markup = error_keyboard(EN.CONTACT_LABEL, Provider.KBZPAY, offer_providers=True)
+    assert _rows(markup) == [["✅ KBZ Pay", "WavePay"], [EN.CONTACT_LABEL]]
+
+
+def test_the_contact_label_is_translated():
+    assert MY.CONTACT_LABEL != EN.CONTACT_LABEL
+    assert _rows(error_keyboard(MY.CONTACT_LABEL)) == [[MY.CONTACT_LABEL]]
 
 
 def test_error_keyboard_without_a_contact_url_degrades_to_providers(monkeypatch):
     """No button is better than a malformed URL: Telegram would reject the message."""
     monkeypatch.setattr(config, "CONTACT_URL", None)
-    assert _rows(error_keyboard(Provider.WAVEPAY)) == [["KBZ Pay", "✅ WavePay"]]
+    assert _rows(error_keyboard(EN.CONTACT_LABEL, Provider.WAVEPAY)) == [
+        ["KBZ Pay", "✅ WavePay"]
+    ]
 
 
 def test_only_the_kbzpay_length_error_offers_a_provider_switch():

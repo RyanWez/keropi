@@ -8,10 +8,11 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
-from bot import config
+from bot import config, texts
 from bot.handlers import setup
 from bot.middlewares.retry_after import RetryAfterMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
+from bot.services.languages import DEFAULT_LANGUAGE, Language
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,24 @@ def build_dispatcher() -> Dispatcher:
     return dp
 
 
+async def publish_commands(bot: Bot) -> None:
+    """Register the command menu, once per language.
+
+    The entry without a language_code is the fallback for every client whose
+    language has no dedicated list.
+    """
+    for language in Language:
+        strings = texts.get(language)
+        commands = [
+            BotCommand(command="start", description=strings.COMMAND_START),
+            BotCommand(command="help", description=strings.COMMAND_HELP),
+            BotCommand(command="lang", description=strings.COMMAND_LANG),
+        ]
+        if language is DEFAULT_LANGUAGE:
+            await bot.set_my_commands(commands)
+        await bot.set_my_commands(commands, language_code=language.value)
+
+
 async def main() -> None:
     config.setup_logging()
     bot = Bot(
@@ -53,10 +72,7 @@ async def main() -> None:
 
     dp = build_dispatcher()
 
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Start bot & choose provider"),
-        BotCommand(command="help", description="How to use this bot"),
-    ])
+    await publish_commands(bot)
 
     runner: web.AppRunner | None = None
     if config.PORT > 0:

@@ -5,25 +5,31 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from bot import texts
-from bot.keyboards.provider_kb import CALLBACK_PREFIX, LABELS, provider_keyboard
+from bot.keyboards import LABELS, PROVIDER_PREFIX, provider_keyboard
 from bot.services.db import set_user_provider
+from bot.services.languages import Language
 from bot.services.providers import Provider, parse_provider
 
 logger = logging.getLogger(__name__)
 router = Router(name="provider")
 
 
-@router.callback_query(F.data.startswith(CALLBACK_PREFIX))
+@router.callback_query(F.data.startswith(PROVIDER_PREFIX))
 async def select_provider(
-    callback: CallbackQuery, state: FSMContext, provider: Provider | None
+    callback: CallbackQuery,
+    state: FSMContext,
+    provider: Provider | None,
+    lang: Language,
 ) -> None:
-    chosen = parse_provider(callback.data.removeprefix(CALLBACK_PREFIX))
+    chosen = parse_provider(callback.data.removeprefix(PROVIDER_PREFIX))
     if chosen is None:
         await callback.answer("Unknown provider", show_alert=True)
         return
 
     if chosen is provider:
-        await callback.answer(f"✅ {LABELS[chosen]} is already selected!")
+        await callback.answer(
+            texts.get(lang).PROVIDER_ALREADY.format(label=LABELS[chosen])
+        )
         return
 
     await state.update_data(provider=chosen.value)
@@ -33,7 +39,7 @@ async def select_provider(
 
     if callback.message:
         await callback.message.answer(
-            texts.ASK_PHONE[chosen.value],
+            texts.get(lang).ASK_PHONE[chosen],
             reply_markup=provider_keyboard(active=chosen),
         )
     await callback.answer()

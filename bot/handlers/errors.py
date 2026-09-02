@@ -15,19 +15,42 @@ from aiogram.exceptions import (
 from aiogram.types import ErrorEvent
 
 from bot import texts
-from bot.keyboards.provider_kb import error_keyboard
+from bot.keyboards import error_keyboard
+from bot.services.db import get_user_lang
+from bot.services.languages import from_telegram, parse_language
 
 logger = logging.getLogger(__name__)
 router = Router(name="errors")
 
 
+def _strings(event: ErrorEvent) -> texts.Strings:
+    """Resolve the user's language directly.
+
+    aiogram's error middleware is the outermost one, so it wraps the user-context
+    middleware and ErrorEvent carries only the raw update. The user has to be dug
+    out of it by hand.
+    """
+    update = event.update
+    for carrier in (update.message, update.callback_query, update.inline_query):
+        if carrier is not None and carrier.from_user is not None:
+            user = carrier.from_user
+            break
+    else:
+        return texts.get()
+
+    lang = parse_language(get_user_lang(user.id)) or from_telegram(user.language_code)
+    return texts.get(lang)
+
+
 async def _notify(event: ErrorEvent) -> None:
     """Best-effort apology. Never let this raise: we are already handling an error."""
+    strings = _strings(event)
     update = event.update
+
     callback = update.callback_query
     if callback is not None:
         try:
-            await callback.answer(texts.ERROR_ALERT, show_alert=True)
+            await callback.answer(strings.ERROR_ALERT, show_alert=True)
         except TelegramAPIError:
             logger.debug("could not answer callback after error", exc_info=True)
         return
@@ -36,7 +59,10 @@ async def _notify(event: ErrorEvent) -> None:
     if message is None:
         return
     try:
-        await message.reply(texts.ERROR_REPLY, reply_markup=error_keyboard())
+        await message.reply(
+            strings.ERROR_REPLY,
+            reply_markup=error_keyboard(strings.CONTACT_LABEL),
+        )
     except TelegramAPIError:
         logger.debug("could not reply after error", exc_info=True)
 

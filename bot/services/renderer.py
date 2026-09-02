@@ -31,6 +31,14 @@ MONO_BOLD_CANDIDATES = (
     _ASSETS / "DejaVuSansMono-Bold.ttf",
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"),
 )
+# DejaVu has no Myanmar glyphs, so Burmese text drawn with it comes out as boxes.
+MYANMAR_BOLD_CANDIDATES = (
+    _ASSETS / "NotoSansMyanmar-Bold.ttf",
+    Path("/usr/share/fonts/truetype/noto/NotoSansMyanmar-Bold.ttf"),
+)
+
+#: Myanmar block, plus the Extended-A and Extended-B ranges.
+_MYANMAR_RANGES = ((0x1000, 0x109F), (0xAA60, 0xAA7F), (0xA9E0, 0xA9FF))
 
 CARD_WIDTH = 900
 PADDING = 48
@@ -64,6 +72,18 @@ def _font(candidates: tuple[Path, ...], size: int) -> ImageFont.FreeTypeFont:
     # Better a card with small text than no card at all.
     logger.warning("no font found in %s, falling back to the PIL default", candidates)
     return ImageFont.load_default(size)
+
+
+def has_myanmar(text: str) -> bool:
+    return any(
+        any(low <= ord(char) <= high for low, high in _MYANMAR_RANGES) for char in text
+    )
+
+
+def _hint_font(text: str) -> ImageFont.ImageFont:
+    """Pick a font that can actually draw ``text``."""
+    candidates = MYANMAR_BOLD_CANDIDATES if has_myanmar(text) else SANS_BOLD_CANDIDATES
+    return _font(candidates, HINT_SIZE)
 
 
 def _wrap(
@@ -106,7 +126,7 @@ def render_qr_card(
 
     title_font = _font(SANS_BOLD_CANDIDATES, TITLE_SIZE)
     number_font = _font(MONO_BOLD_CANDIDATES, NUMBER_SIZE)
-    hint_font = _font(SANS_BOLD_CANDIDATES, HINT_SIZE)
+    hint_font = _hint_font(warning or "")
 
     width = max(CARD_WIDTH, qr_img.width + PADDING * 2)
     text_width = width - PADDING * 2

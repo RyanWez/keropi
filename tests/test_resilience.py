@@ -66,7 +66,7 @@ def test_throttle_warns_once_then_stays_quiet():
     mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
     notices: list[TelegramObject] = []
 
-    async def record(event):
+    async def record(event, _user):
         notices.append(event)
 
     mw._notify = record

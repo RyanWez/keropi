@@ -19,9 +19,10 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Update
 
-logger = logging.getLogger(__name__)
+from bot import texts
+from bot.services.languages import from_telegram, parse_language
 
-COOLDOWN_NOTICE = "⏳ One moment — please wait a couple of seconds between numbers."
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,21 +67,31 @@ class ThrottleMiddleware(BaseMiddleware):
 
         if now - entry.last_warned >= self.cooldown:
             entry.last_warned = now
-            await self._notify(event)
+            await self._notify(event, user)
         self._seen.move_to_end(user.id)
         logger.debug("throttled user %s", user.id)
         return None
 
     @staticmethod
-    async def _notify(event: TelegramObject) -> None:
+    async def _notify(event: TelegramObject, user: Any) -> None:
         if not isinstance(event, Update):
             return
+
+        # This middleware runs before the settings middleware, so the saved language
+        # is looked up here. It fires at most once per cooldown window per user.
+        from bot.services.db import get_user_lang
+
+        lang = parse_language(get_user_lang(user.id)) or from_telegram(
+            getattr(user, "language_code", None)
+        )
+        notice = texts.get(lang).COOLDOWN_NOTICE
+
         try:
             if event.callback_query is not None:
                 # Answer it regardless, or the client keeps spinning.
-                await event.callback_query.answer(COOLDOWN_NOTICE)
+                await event.callback_query.answer(notice)
             elif event.message is not None:
-                await event.message.reply(COOLDOWN_NOTICE)
+                await event.message.reply(notice)
         except Exception:
             # Telling the user is a courtesy. Nothing here may turn a throttled
             # update into an error, so this catch is deliberately broad.

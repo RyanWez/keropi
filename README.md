@@ -4,8 +4,8 @@ A Telegram bot that turns a customer's phone number into a scannable payment QR
 code for **KBZ Pay** and **WavePay**, so nobody has to retype a number into a
 transfer screen.
 
-Anyone may use it. There is a short per-user cooldown so one person's burst can't
-slow it down for everybody else.
+Anyone may use it, in English or Myanmar. There is a short per-user cooldown so one
+person's burst can't slow it down for everybody else.
 
 ---
 
@@ -22,6 +22,9 @@ slow it down for everybody else.
 - **Repeat numbers are free** — once a card has been sent, Telegram will re-send it
   from its `file_id`, so the same number costs no rendering and no upload.
 - **Forgiving input** — `09…`, `+959…`, `959…`, and spaces, dashes or brackets.
+- **English and Myanmar** — `/lang` switches; a first-time user gets whichever their
+  Telegram client is set to. The card's own warning line is drawn with a Burmese font
+  so it isn't a row of empty boxes.
 - **A way to reach you when it fails** — error replies swap the provider buttons for
   a contact link, since switching provider is not what a stuck user needs.
 
@@ -63,22 +66,24 @@ keropi/
 ├── bot/
 │   ├── __main__.py                 # entry point: python -m bot
 │   ├── config.py                   # env parsing, logging
-│   ├── texts.py                    # all user-facing copy, keyed for a future /lang
-│   ├── assets/fonts/               # vendored DejaVu, so cards render the same everywhere
+│   ├── texts.py                    # every user-facing string, one record per language
+│   ├── assets/fonts/               # vendored DejaVu + Noto Sans Myanmar
 │   ├── handlers/
 │   │   ├── errors.py               # catch-all error handler
 │   │   ├── diagnostics.py          # owner-only /decode
-│   │   ├── start.py                # /start, /help, unknown commands
-│   │   ├── provider.py             # inline button callbacks
+│   │   ├── start.py                # /start, /help, /lang, unknown commands
+│   │   ├── provider.py             # provider button callbacks
+│   │   ├── language.py             # language button callbacks
 │   │   ├── inline.py               # inline mode
 │   │   └── phone.py                # number -> QR card (private chats only)
-│   ├── keyboards/provider_kb.py
+│   ├── keyboards/                  # provider, language and error keyboards
 │   ├── middlewares/
-│   │   ├── provider_ctx.py         # resolves the selected provider once per update
+│   │   ├── settings.py             # resolves provider + language once per update
 │   │   ├── throttle.py             # per-user cooldown
 │   │   └── retry_after.py          # honours Telegram's flood-control back-off
 │   └── services/
 │       ├── providers.py            # Provider enum + tolerant parsing
+│       ├── languages.py            # Language enum + Telegram client detection
 │       ├── validators.py           # normalisation and length rules
 │       ├── kbzpay_qr.py            # TLV payload builder
 │       ├── wavepay_qr.py
@@ -135,6 +140,22 @@ console and to `bot.log`, rotating at 1 MB with three backups.
    `file_id`, never raw bytes, so a card has to be uploaded once before it can be
    offered inline.
 
+### Adding a language
+
+`bot/texts.py` holds one `Strings` record per language. Add a member to `Language`,
+add a record, and everything else follows — a missing field is a startup-time error
+rather than a stray English sentence in production. The command menu is published per
+language, so `/help` and friends describe themselves correctly in the Telegram UI.
+
+Two things to watch when the language is not written in Latin script:
+
+- Anything drawn onto the **card** must be renderable by one font. The renderer picks
+  Noto Sans Myanmar for Burmese and DejaVu otherwise, and neither covers the other's
+  script, so `PADDING_WARNING` must not mix them — use `၊` rather than `-` in a
+  Burmese line. `tests/test_card_text.py` fails if you forget.
+- Everything else goes through Telegram, which renders any script, so message copy
+  is unconstrained.
+
 ---
 
 ## 🧪 Tests
@@ -151,9 +172,14 @@ The suite pins the things that must not drift:
   and `٩`, which `str.isdigit()` accepts and the BCD encoder cannot;
 - every card is rendered and scanned back with `zxing-cpp`, so a layout change
   can't quietly break scanning;
+- every character of the card's warning line exists in the font that draws it —
+  DejaVu has no Burmese glyphs and Noto Sans Myanmar has no Latin ones, so a mixed
+  string, or a stray ASCII hyphen in a Burmese line, would render as empty boxes;
 - the dispatcher end to end: a repeat number reuses its `file_id`, a stale
   `file_id` falls back to rendering, group messages are ignored, and a handler
-  that raises still gets a reply out.
+  that raises still gets a reply out;
+- the `/lang` flow: choosing a language confirms in that language, choosing the
+  active one only raises a toast, and every reply honours the choice.
 
 ---
 

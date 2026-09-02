@@ -1,7 +1,7 @@
 from aiogram import Router
 
-from bot.handlers import diagnostics, errors, inline, phone, provider, start
-from bot.middlewares.provider_ctx import ProviderContextMiddleware
+from bot.handlers import diagnostics, errors, inline, language, phone, provider, start
+from bot.middlewares.settings import SettingsMiddleware
 
 _root: Router | None = None
 
@@ -20,14 +20,16 @@ def setup() -> Router:
         return _root
 
     router = Router(name="root")
-    provider_ctx = ProviderContextMiddleware()
-    router.message.outer_middleware(provider_ctx)
-    router.callback_query.outer_middleware(provider_ctx)
+    settings = SettingsMiddleware()
+    router.message.outer_middleware(settings)
+    router.callback_query.outer_middleware(settings)
+    router.inline_query.outer_middleware(settings)
     router.include_routers(
         errors.router,
         diagnostics.router,
         start.router,
         provider.router,
+        language.router,
         inline.router,
         phone.router,
     )

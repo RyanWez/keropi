@@ -16,12 +16,16 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import AnswerInlineQuery, SendMessage, SendPhoto
 from aiogram.types import BufferedInputFile, Chat, InlineQuery, Message, PhotoSize, Update, User
 
+from bot import texts
 from bot.config import CONTACT_URL
-from bot.handlers import setup
-from bot.services import renderer
+from bot.services import db, renderer
 from bot.services.kbzpay_qr import kbzpay_qr_string
+from bot.services.languages import Language
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
+
+EN = texts.get(Language.EN)
+MY = texts.get(Language.MY)
 
 CHAT_ID = 5_000_001
 USER_ID = 5_000_002
@@ -118,23 +122,13 @@ def _group_update(text: str, message_id: int) -> Update:
     )
 
 
-@pytest.fixture(scope="module")
-def dispatcher() -> Dispatcher:
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(setup())
-    return dp
-
-
 @pytest.fixture(autouse=True)
-def _isolate(dispatcher, tmp_path, monkeypatch, caplog):
-    """Fresh FSM and cache per test, and no stored provider unless a test asks."""
+def _isolate(dispatcher, caplog):
+    """Fresh FSM per test, and fail loudly if a handler raised.
+
+    The database and the file_id cache are reset by the autouse fixture in conftest.
+    """
     dispatcher.fsm.storage = MemoryStorage()
-    cache._entries.clear()
-    monkeypatch.setattr("bot.services.db.DB_PATH", tmp_path / "test.db")
-    monkeypatch.setattr("bot.services.db._initialised", None)
-    monkeypatch.setattr(
-        "bot.middlewares.provider_ctx.get_user_provider", lambda _uid: None
-    )
     yield
     # The catch-all error handler swallows exceptions by design, which would let a
     # broken handler pass as a green test. Only the error-handler test may log one.
@@ -149,10 +143,13 @@ def bot() -> RecordingBot:
     return RecordingBot()
 
 
-def _select(monkeypatch, provider: Provider) -> None:
-    monkeypatch.setattr(
-        "bot.middlewares.provider_ctx.get_user_provider", lambda _uid: provider.value
-    )
+def _select(provider: Provider) -> None:
+    """Store a provider the way the callback handler would, through the real database."""
+    db.set_user_provider(USER_ID, provider.value)
+
+
+def _select_lang(lang: Language) -> None:
+    db.set_user_lang(USER_ID, lang.value)
 
 
 def _feed(dp: Dispatcher, bot: RecordingBot, text: str) -> None:
@@ -182,7 +179,7 @@ def test_number_without_a_provider_asks_for_one(dispatcher, bot):
 
 
 def test_kbzpay_11_digits_returns_a_photo(dispatcher, bot, monkeypatch):
-    _select(monkeypatch, Provider.KBZPAY)
+    _select(Provider.KBZPAY)
     _feed(dispatcher, bot, "+95 9 123 456 789")
 
     (photo,) = bot.sent_photos
@@ -192,7 +189,7 @@ def test_kbzpay_11_digits_returns_a_photo(dispatcher, bot, monkeypatch):
 
 
 def test_kbzpay_10_digits_explains_instead_of_guessing(dispatcher, bot, monkeypatch):
-    _select(monkeypatch, Provider.KBZPAY)
+    _select(Provider.KBZPAY)
     _feed(dispatcher, bot, "0912345678")
 
     assert not bot.sent_photos, "must not emit a QR built on unverified padding"
@@ -209,7 +206,7 @@ def test_kbzpay_10_digits_explains_instead_of_guessing(dispatcher, bot, monkeypa
 
 
 def test_wavepay_accepts_a_10_digit_number(dispatcher, bot, monkeypatch):
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     _feed(dispatcher, bot, "0912345678")
 
     (photo,) = bot.sent_photos
@@ -217,7 +214,7 @@ def test_wavepay_accepts_a_10_digit_number(dispatcher, bot, monkeypatch):
 
 
 def test_unicode_digits_get_a_reply_rather_than_a_crash(dispatcher, bot, monkeypatch):
-    _select(monkeypatch, Provider.KBZPAY)
+    _select(Provider.KBZPAY)
     _feed(dispatcher, bot, "09960476\u00b2\u00b23")
 
     assert not bot.sent_photos
@@ -236,7 +233,7 @@ def test_a_dead_end_offers_contact_instead_of_the_providers(
     dispatcher, bot, monkeypatch, message
 ):
     """Switching provider fixes none of these, so don't pretend it might."""
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     _feed(dispatcher, bot, message)
 
     sent = bot.calls[0]
@@ -257,7 +254,7 @@ def test_an_unset_contact_url_falls_back_to_the_provider_buttons(
     dispatcher, bot, monkeypatch
 ):
     monkeypatch.setattr("bot.config.CONTACT_URL", None)
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     _feed(dispatcher, bot, "0912345")
 
     sent = bot.calls[0]
@@ -265,18 +262,22 @@ def test_an_unset_contact_url_falls_back_to_the_provider_buttons(
     assert _urls(sent.reply_markup) == []
 
 
-def test_a_corrupt_stored_provider_does_not_break_start(dispatcher, bot, monkeypatch):
-    monkeypatch.setattr(
-        "bot.middlewares.provider_ctx.get_user_provider", lambda _uid: "moneygram"
-    )
+def test_a_corrupt_stored_provider_does_not_break_start(dispatcher, bot):
+    db.set_user_provider(USER_ID, "moneygram")
     _feed(dispatcher, bot, "/start")
     assert bot.sent_texts, "/start must still answer"
+
+
+def test_a_corrupt_stored_language_does_not_break_start(dispatcher, bot):
+    db.set_user_lang(USER_ID, "klingon")
+    _feed(dispatcher, bot, "/start")
+    assert bot.sent_texts[0] == EN.WELCOME, "an unknown language falls back to English"
 
 
 def test_the_error_handler_replies_when_a_handler_explodes(
     dispatcher, bot, monkeypatch
 ):
-    _select(monkeypatch, Provider.KBZPAY)
+    _select(Provider.KBZPAY)
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("expect_error: renderer exploded")
@@ -305,7 +306,7 @@ def test_an_unknown_command_says_so(dispatcher, bot):
 
 def test_a_group_message_is_ignored(dispatcher, bot, monkeypatch):
     """The phone handlers are catch-alls; in a group they must stay quiet."""
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     asyncio.run(dispatcher.feed_update(bot, _group_update("09123456789", 7)))
     assert not bot.calls
 
@@ -333,7 +334,7 @@ def test_the_owner_can_decode_a_pasted_qr(dispatcher, bot, monkeypatch):
 def test_a_repeat_number_is_answered_from_the_file_id_cache(
     dispatcher, bot, monkeypatch
 ):
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     renders = 0
     original = renderer.render_qr_card
 
@@ -355,7 +356,7 @@ def test_a_repeat_number_is_answered_from_the_file_id_cache(
 
 
 def test_a_rejected_file_id_falls_back_to_rendering(dispatcher, bot, monkeypatch):
-    _select(monkeypatch, Provider.WAVEPAY)
+    _select(Provider.WAVEPAY)
     cache.put(Provider.WAVEPAY, "09123456789", "file-that-telegram-forgot")
     bot.reject_file_ids.add("file-that-telegram-forgot")
 
