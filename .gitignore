@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Test & build artefacts
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
 # Environments
 .venv/
 venv/
@@ -27,6 +33,7 @@ bot.log
 # Project specific
 .mimosa/
 .minosa/
+.zcode/
 
 # OS generated files
 .DS_Store
