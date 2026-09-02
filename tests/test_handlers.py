@@ -18,6 +18,7 @@ from aiogram.types import BufferedInputFile, Chat, Message, PhotoSize, Update, U
 
 from bot.handlers import setup
 from bot.services import renderer
+from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
 
@@ -85,6 +86,19 @@ def _message(message_id: int, **kwargs) -> Message:
 
 def _update(text: str, message_id: int = 1) -> Update:
     return Update(update_id=message_id, message=_message(message_id, text=text))
+
+
+def _group_update(text: str, message_id: int) -> Update:
+    return Update(
+        update_id=message_id,
+        message=Message(
+            message_id=message_id,
+            date=datetime.now(timezone.utc),
+            chat=Chat(id=-100_123, type="supergroup"),
+            from_user=User(id=USER_ID, is_bot=False, first_name="Tester"),
+            text=text,
+        ),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -206,6 +220,39 @@ def test_the_error_handler_replies_when_a_handler_explodes(
 def test_help_lists_the_kbzpay_length_rule(dispatcher, bot):
     _feed(dispatcher, bot, "/help")
     assert "11-digit" in bot.sent_texts[0]
+
+
+def test_an_unknown_command_says_so(dispatcher, bot):
+    """Without a guard this fell through to "Numbers only, please"."""
+    _feed(dispatcher, bot, "/halp")
+    assert "don't know that command" in bot.sent_texts[0]
+
+
+def test_a_group_message_is_ignored(dispatcher, bot, monkeypatch):
+    """The phone handlers are catch-alls; in a group they must stay quiet."""
+    _select(monkeypatch, Provider.WAVEPAY)
+    asyncio.run(dispatcher.feed_update(bot, _group_update("09123456789", 7)))
+    assert not bot.calls
+
+
+def test_a_group_still_gets_start(dispatcher, bot):
+    asyncio.run(dispatcher.feed_update(bot, _group_update("/start", 8)))
+    assert bot.sent_texts
+
+
+def test_decode_is_owner_only(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.OWNER_ID", 0)
+    _feed(dispatcher, bot, "/decode")
+    assert "don't know that command" in bot.sent_texts[0]
+
+
+def test_the_owner_can_decode_a_pasted_qr(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.OWNER_ID", USER_ID)
+    _feed(dispatcher, bot, f"/decode {kbzpay_qr_string('09123456789')}")
+
+    report = bot.sent_texts[0]
+    assert "42 bytes" in report
+    assert "09123456789" in report
 
 
 def test_a_repeat_number_is_answered_from_the_file_id_cache(

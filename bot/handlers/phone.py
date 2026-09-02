@@ -1,6 +1,7 @@
 import logging
 
 from aiogram import F, Router
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
@@ -16,6 +17,11 @@ from bot.services.wavepay_qr import wavepay_qr_string
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# These two handlers are catch-alls. In a group with privacy mode off they would
+# answer every message posted, so keep them to one-to-one chats; the commands in
+# start.py still work anywhere.
+router.message.filter(F.chat.type == ChatType.PRIVATE)
 
 
 def build_payload(provider: Provider, phone: str) -> str:

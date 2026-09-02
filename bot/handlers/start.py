@@ -1,4 +1,4 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -24,3 +24,15 @@ async def cmd_start(
 @router.message(Command("help"))
 async def cmd_help(message: Message, provider: Provider | None) -> None:
     await message.reply(texts.HELP, reply_markup=provider_keyboard(active=provider))
+
+
+@router.message(F.text.startswith("/"))
+async def unknown_command(message: Message, provider: Provider | None) -> None:
+    """Anything command-shaped that got this far isn't one of ours.
+
+    Without this it would fall through to the phone handler and come back as
+    "Numbers only, please", which is a confusing answer to a typo like /halp.
+    """
+    await message.reply(
+        texts.UNKNOWN_COMMAND, reply_markup=provider_keyboard(active=provider)
+    )
