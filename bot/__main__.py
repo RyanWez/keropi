@@ -72,7 +72,10 @@ async def main() -> None:
 
     dp = build_dispatcher()
 
-    await publish_commands(bot)
+    try:
+        await publish_commands(bot)
+    except Exception as exc:
+        logger.warning("could not publish bot commands: %s", exc)
 
     runner: web.AppRunner | None = None
     if config.PORT > 0:

@@ -33,4 +33,5 @@ def from_telegram(language_code: str | None) -> Language:
     """
     if not language_code:
         return DEFAULT_LANGUAGE
-    return parse_language(language_code.split("-")[0].lower()) or DEFAULT_LANGUAGE
+    subtag = language_code.replace("_", "-").split("-")[0].lower()
+    return parse_language(subtag) or DEFAULT_LANGUAGE

@@ -70,6 +70,7 @@ def _ensure_schema() -> None:
     """
     global _initialised
 
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(DB_PATH, timeout=5.0)) as conn:
         # WAL lets reads proceed while a write is in flight, which matters once
         # several updates are handled concurrently.

@@ -221,3 +221,41 @@ def test_setting_a_language_leaves_the_provider_alone(dispatcher, bot):
     _feed(dispatcher, bot, _tap("lang:my"))
 
     assert db.get_user_settings(USER_ID) == (Provider.KBZPAY.value, "my")
+
+
+@pytest.mark.parametrize("cmd", ["/Lang", "/LANG", "/language", "/Language"])
+def test_language_command_casing_and_alias(dispatcher, bot, cmd):
+    _feed(dispatcher, bot, _text_update(cmd))
+    assert bot.texts == [EN.LANG_PROMPT]
+
+
+def test_first_time_locale_with_underscore_recognises_myanmar(dispatcher, bot):
+    _feed(dispatcher, bot, _text_update("/start", language_code="my_MM"))
+    assert bot.texts == [MY.WELCOME]
+
+
+def test_database_migration_from_legacy_schema(tmp_path, monkeypatch):
+    import sqlite3
+
+    legacy_db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(legacy_db)
+    conn.execute(
+        "CREATE TABLE user_settings (user_id INTEGER PRIMARY KEY, provider TEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.execute("INSERT INTO user_settings (user_id, provider) VALUES (999, 'kbzpay')")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr("bot.services.db.DB_PATH", legacy_db)
+    monkeypatch.setattr("bot.services.db._initialised", None)
+
+    # Reading settings triggers migration
+    provider, lang = db.get_user_settings(999)
+    assert provider == "kbzpay"
+    assert lang is None
+
+    # Writing settings works on migrated schema
+    db.set_user_lang(999, "my")
+    provider, lang = db.get_user_settings(999)
+    assert provider == "kbzpay"
+    assert lang == "my"

@@ -23,14 +23,14 @@ async def cmd_start(
     )
 
 
-@router.message(Command("help"))
+@router.message(Command("help", ignore_case=True))
 async def cmd_help(message: Message, provider: Provider | None, lang: Language) -> None:
     await message.reply(
         texts.get(lang).HELP, reply_markup=provider_keyboard(active=provider)
     )
 
 
-@router.message(Command("lang"))
+@router.message(Command("lang", "language", ignore_case=True))
 async def cmd_lang(message: Message, lang: Language) -> None:
     await message.reply(
         texts.get(lang).LANG_PROMPT, reply_markup=language_keyboard(active=lang)
