@@ -16,6 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import AnswerInlineQuery, SendMessage, SendPhoto
 from aiogram.types import BufferedInputFile, Chat, InlineQuery, Message, PhotoSize, Update, User
 
+from bot.config import CONTACT_URL
 from bot.handlers import setup
 from bot.services import renderer
 from bot.services.kbzpay_qr import kbzpay_qr_string
@@ -158,13 +159,20 @@ def _feed(dp: Dispatcher, bot: RecordingBot, text: str) -> None:
     asyncio.run(dp.feed_update(bot, _update(text)))
 
 
+def _rows(markup) -> list[list[str]]:
+    return [[button.text for button in row] for row in markup.inline_keyboard]
+
+
+def _urls(markup) -> list[str | None]:
+    return [b.url for row in markup.inline_keyboard for b in row if b.url]
+
+
 def test_start_offers_both_providers(dispatcher, bot):
     _feed(dispatcher, bot, "/start")
 
     (sent,) = bot.calls
     assert isinstance(sent, SendMessage)
-    labels = [b.text for row in sent.reply_markup.inline_keyboard for b in row]
-    assert labels == ["KBZ Pay", "WavePay"]
+    assert _rows(sent.reply_markup) == [["KBZ Pay", "WavePay"]]
 
 
 def test_number_without_a_provider_asks_for_one(dispatcher, bot):
@@ -188,10 +196,16 @@ def test_kbzpay_10_digits_explains_instead_of_guessing(dispatcher, bot, monkeypa
     _feed(dispatcher, bot, "0912345678")
 
     assert not bot.sent_photos, "must not emit a QR built on unverified padding"
-    reply = bot.sent_texts[0]
-    assert "11-digit" in reply
-    assert "10 digits" in reply
-    assert "WavePay" in reply
+    sent = bot.calls[0]
+    assert "11-digit" in sent.text
+    assert "10 digits" in sent.text
+    assert "WavePay" in sent.text
+    # The text says "switch to WavePay below", so that button has to still be there.
+    assert _rows(sent.reply_markup) == [
+        ["✅ KBZ Pay", "WavePay"],
+        ["💬 Contact & Feedback"],
+    ]
+    assert _urls(sent.reply_markup) == [CONTACT_URL]
 
 
 def test_wavepay_accepts_a_10_digit_number(dispatcher, bot, monkeypatch):
@@ -208,6 +222,47 @@ def test_unicode_digits_get_a_reply_rather_than_a_crash(dispatcher, bot, monkeyp
 
     assert not bot.sent_photos
     assert "Numbers only" in bot.sent_texts[0]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "0912345",  # not a Myanmar mobile
+        "09abc456789",  # not digits
+        "/halp",  # unknown command
+    ],
+)
+def test_a_dead_end_offers_contact_instead_of_the_providers(
+    dispatcher, bot, monkeypatch, message
+):
+    """Switching provider fixes none of these, so don't pretend it might."""
+    _select(monkeypatch, Provider.WAVEPAY)
+    _feed(dispatcher, bot, message)
+
+    sent = bot.calls[0]
+    assert _rows(sent.reply_markup) == [["💬 Contact & Feedback"]]
+    assert _urls(sent.reply_markup) == [CONTACT_URL]
+
+
+def test_choosing_a_provider_still_shows_the_provider_buttons(dispatcher, bot):
+    """"Pick a provider first" is a prompt, not a dead end."""
+    _feed(dispatcher, bot, "09123456789")
+
+    sent = bot.calls[0]
+    assert "choose a provider" in sent.text.lower()
+    assert _rows(sent.reply_markup) == [["KBZ Pay", "WavePay"]]
+
+
+def test_an_unset_contact_url_falls_back_to_the_provider_buttons(
+    dispatcher, bot, monkeypatch
+):
+    monkeypatch.setattr("bot.config.CONTACT_URL", None)
+    _select(monkeypatch, Provider.WAVEPAY)
+    _feed(dispatcher, bot, "0912345")
+
+    sent = bot.calls[0]
+    assert _rows(sent.reply_markup) == [["KBZ Pay", "✅ WavePay"]]
+    assert _urls(sent.reply_markup) == []
 
 
 def test_a_corrupt_stored_provider_does_not_break_start(dispatcher, bot, monkeypatch):
@@ -230,7 +285,11 @@ def test_the_error_handler_replies_when_a_handler_explodes(
     _feed(dispatcher, bot, "09123456789")
 
     assert not bot.sent_photos
-    assert "went wrong" in bot.sent_texts[-1]
+    sent = bot.calls[-1]
+    assert "went wrong" in sent.text
+    # A failure is exactly when someone wants to reach a human.
+    assert _rows(sent.reply_markup) == [["💬 Contact & Feedback"]]
+    assert _urls(sent.reply_markup) == [CONTACT_URL]
 
 
 def test_help_lists_the_kbzpay_length_rule(dispatcher, bot):

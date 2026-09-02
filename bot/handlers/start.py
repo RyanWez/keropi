@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot import texts
-from bot.keyboards.provider_kb import provider_keyboard
+from bot.keyboards.provider_kb import error_keyboard, provider_keyboard
 from bot.services.providers import Provider
 
 router = Router(name="start")
@@ -34,5 +34,5 @@ async def unknown_command(message: Message, provider: Provider | None) -> None:
     "Numbers only, please", which is a confusing answer to a typo like /halp.
     """
     await message.reply(
-        texts.UNKNOWN_COMMAND, reply_markup=provider_keyboard(active=provider)
+        texts.UNKNOWN_COMMAND, reply_markup=error_keyboard(active=provider)
     )

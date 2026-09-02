@@ -15,7 +15,7 @@ from aiogram.exceptions import (
 from aiogram.types import ErrorEvent
 
 from bot import texts
-from bot.keyboards.provider_kb import provider_keyboard
+from bot.keyboards.provider_kb import error_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router(name="errors")
@@ -36,7 +36,7 @@ async def _notify(event: ErrorEvent) -> None:
     if message is None:
         return
     try:
-        await message.reply(texts.ERROR_REPLY, reply_markup=provider_keyboard())
+        await message.reply(texts.ERROR_REPLY, reply_markup=error_keyboard())
     except TelegramAPIError:
         logger.debug("could not reply after error", exc_info=True)
 

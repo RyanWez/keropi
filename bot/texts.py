@@ -107,3 +107,12 @@ _PHONE_ERRORS = {
 def phone_error(check: PhoneCheck) -> str:
     template = _PHONE_ERRORS.get(check.reason) or _PHONE_ERRORS[Reason.EMPTY]
     return template.format(digits=check.digits)
+
+
+#: The only rejection whose text points at a provider button, so that row has to
+#: stay on screen. For every other failure, switching provider is not the fix.
+_REASONS_WITH_PROVIDER_REMEDY = frozenset({Reason.KBZPAY_NEEDS_11})
+
+
+def offers_provider_switch(check: PhoneCheck) -> bool:
+    return check.reason in _REASONS_WITH_PROVIDER_REMEDY

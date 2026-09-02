@@ -22,6 +22,8 @@ slow it down for everybody else.
 - **Repeat numbers are free** — once a card has been sent, Telegram will re-send it
   from its `file_id`, so the same number costs no rendering and no upload.
 - **Forgiving input** — `09…`, `+959…`, `959…`, and spaces, dashes or brackets.
+- **A way to reach you when it fails** — error replies swap the provider buttons for
+  a contact link, since switching provider is not what a stuck user needs.
 
 ## 📏 Number formats, and why KBZ Pay is stricter
 
@@ -118,6 +120,7 @@ console and to `bot.log`, rotating at 1 MB with three backups.
 | `DB_PATH` | `bot.db` | Where user preferences live. |
 | `OWNER_ID` | unset | Telegram user id allowed to run `/decode`. |
 | `QR_CACHE_CHAT_ID` | unset | Chat to upload cards to for inline mode. Unset disables inline mode. |
+| `CONTACT_URL` | `https://t.me/Super001z` | Target of the contact button on error replies. Empty drops the button. |
 | `KBZPAY_ALLOW_SHORT_NUMBERS` | `false` | Allow 9/10-digit KBZ Pay numbers with unverified padding. |
 | `RENDER_WORKERS` | `3` | Threads for card rendering. |
 | `MAX_CONCURRENT_UPDATES` | `24` | Ceiling on updates in flight. |

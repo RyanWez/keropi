@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, Message
 
 from bot import texts
-from bot.keyboards.provider_kb import provider_keyboard
+from bot.keyboards.provider_kb import error_keyboard, provider_keyboard
 from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
@@ -45,7 +45,10 @@ async def phone_to_qr(
     if not check.ok:
         await message.reply(
             texts.phone_error(check),
-            reply_markup=provider_keyboard(active=provider),
+            reply_markup=error_keyboard(
+                active=provider,
+                offer_providers=texts.offers_provider_switch(check),
+            ),
         )
         return
 
@@ -88,4 +91,4 @@ async def not_text(message: Message, provider: Provider | None) -> None:
         await message.reply(texts.NO_PROVIDER, reply_markup=provider_keyboard())
         return
 
-    await message.reply(texts.NOT_TEXT, reply_markup=provider_keyboard(active=provider))
+    await message.reply(texts.NOT_TEXT, reply_markup=error_keyboard(active=provider))

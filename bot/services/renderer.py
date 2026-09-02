@@ -6,7 +6,6 @@ output is identical everywhere and a slim container without system fonts still
 works.
 """
 
-import asyncio
 import io
 import logging
 from functools import lru_cache

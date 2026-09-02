@@ -21,6 +21,8 @@ services:
         sync: false
       - key: QR_CACHE_CHAT_ID
         sync: false
+      - key: CONTACT_URL
+        value: https://t.me/Super001z
       # Free instances get 512 MB and a shared CPU share.
       - key: RENDER_WORKERS
         value: "3"

@@ -1,6 +1,8 @@
+import ipaddress
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -20,6 +22,42 @@ def _int(name: str, default: int) -> int:
         return int(raw) if raw else default
     except ValueError:
         return default
+
+
+def _button_url(name: str, default: str = "") -> str | None:
+    """Validate a URL destined for an inline button, or return None.
+
+    Telegram rejects the whole message if a button URL is malformed, and the
+    messages carrying this one are error replies — the last place that should fail.
+    So a bad value disables the button rather than breaking the reply.
+    """
+    raw = os.getenv(name)
+    # An explicitly empty value means "no button"; only an unset one takes the default.
+    raw = (default if raw is None else raw).strip()
+    if not raw:
+        return None
+
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        logging.getLogger(__name__).warning(
+            "%s must be an http(s) URL with a host; ignoring %r", name, raw
+        )
+        return None
+
+    host = parsed.hostname.lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return None
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        pass  # a domain name, which is what we expect
+    else:
+        if not address.is_global:
+            logging.getLogger(__name__).warning(
+                "%s points at a non-routable address; ignoring %r", name, raw
+            )
+            return None
+    return raw
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
@@ -69,6 +107,11 @@ QR_CACHE_SIZE = _int("QR_CACHE_SIZE", 2000)
 # a private channel or group the bot can post to. Unset disables inline mode, which
 # then falls back to a "open the bot" button.
 QR_CACHE_CHAT_ID = _int("QR_CACHE_CHAT_ID", 0)
+
+# Where the "Contact & Feedback" button on error replies points. When something has
+# gone wrong is exactly when someone wants to reach a human, and the provider
+# buttons are no use to them. Set to empty to drop the button.
+CONTACT_URL = _button_url("CONTACT_URL", "https://t.me/Super001z")
 
 
 def setup_logging() -> None:
