@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from bot.handlers import diagnostics, errors, phone, provider, start
+from bot.handlers import diagnostics, errors, inline, phone, provider, start
 from bot.middlewares.provider_ctx import ProviderContextMiddleware
 
 _root: Router | None = None
@@ -28,6 +28,7 @@ def setup() -> Router:
         diagnostics.router,
         start.router,
         provider.router,
+        inline.router,
         phone.router,
     )
     _root = router

@@ -24,8 +24,11 @@ from bot.services.kbzpay_qr import (
 
 MYANMAR_TZ = timezone(timedelta(hours=6, minutes=30))
 
-#: base64 body, "F", one checksum character, the timestamp in hex, then a literal "==".
-_QR_RE = re.compile(r"^(?P<body>.+)F(?P<checksum>.)(?P<ts>[0-9a-f]{8,16})==$")
+_HEX_RE = re.compile(r"[0-9a-f]+")
+
+#: Literal terminator, not base64 padding: 42 bytes encode to 56 characters exactly.
+TERMINATOR = "=="
+SEPARATOR = "F"
 
 PHONE_FIELD_START = len(HEAD)
 PHONE_FIELD_END = PHONE_FIELD_START + PHONE_FIELD_NIBBLES // 2
@@ -52,6 +55,56 @@ def _split_bcd(field_bytes: bytes) -> tuple[str, str]:
     return digits, nibbles[len(digits) :]
 
 
+def _decode_b64(body: str) -> bytes | None:
+    try:
+        return base64.b64decode(body + "=" * (-len(body) % 4), validate=True)
+    except (ValueError, base64.binascii.Error):
+        return None
+
+
+@dataclass
+class _Split:
+    tlv: bytes
+    checksum: str
+    timestamp_ms: int
+    header_matched: bool
+
+
+def _split(text: str) -> _Split | None:
+    """Find where the base64 body ends and the timestamp suffix begins.
+
+    The separator is a literal "F", but base64 bodies contain "F" too and the
+    checksum character can itself be a hex digit, so a single regex picks the wrong
+    split whenever the checksum happens to be "F". Instead, try every candidate from
+    the longest body down and accept the first where the tail is all hex and the body
+    decodes. A body whose bytes start with the KBZPay header wins outright.
+    """
+    if not text.endswith(TERMINATOR):
+        return None
+    middle = text[: -len(TERMINATOR)]
+
+    fallback: _Split | None = None
+    for index in range(len(middle) - 2, -1, -1):
+        if middle[index] != SEPARATOR:
+            continue
+        body, tail = middle[:index], middle[index + 2 :]
+        if not tail or not _HEX_RE.fullmatch(tail):
+            continue
+        tlv = _decode_b64(body)
+        if tlv is None:
+            continue
+        candidate = _Split(
+            tlv=tlv,
+            checksum=middle[index + 1],
+            timestamp_ms=int(tail, 16),
+            header_matched=tlv.startswith(HEAD),
+        )
+        if candidate.header_matched:
+            return candidate
+        fallback = fallback or candidate
+    return fallback
+
+
 def decode_qr_string(raw: str) -> Decoded:
     """Describe a scanned QR payload, whatever shape it turns out to be."""
     text = raw.strip()
@@ -65,29 +118,21 @@ def decode_qr_string(raw: str) -> Decoded:
         result.phone_digits = text
         return result
 
-    match = _QR_RE.match(text)
-    if match is None:
+    parsed = _split(text)
+    if parsed is None:
         result.notes.append("Does not match base64 + F + checksum + hex(ts) + '=='.")
         return result
 
-    body = match.group("body")
-    result.timestamp_ms = int(match.group("ts"), 16)
-
-    try:
-        padding = "=" * (-len(body) % 4)
-        tlv = base64.b64decode(body + padding, validate=True)
-    except (ValueError, base64.binascii.Error) as error:
-        result.notes.append(f"base64 body did not decode: {error}")
-        return result
-
+    tlv = parsed.tlv
     result.tlv = tlv
+    result.timestamp_ms = parsed.timestamp_ms
+
     if len(tlv) != TLV_LENGTH:
         result.notes.append(
             f"TLV is {len(tlv)} bytes, not the expected {TLV_LENGTH} — "
             "the field layout differs from the known format."
         )
-
-    if not tlv.startswith(HEAD):
+    if not parsed.header_matched:
         result.notes.append("HEAD template does not match.")
     if not tlv.endswith(TAIL):
         result.notes.append("TAIL template does not match.")
@@ -97,10 +142,10 @@ def decode_qr_string(raw: str) -> Decoded:
         result.phone_digits = digits
         result.pad_nibbles = pad
 
-    expected = BASE64_ALPHABET[sum(int(d) for d in str(result.timestamp_ms)) % 64]
-    if expected != match.group("checksum"):
+    expected = BASE64_ALPHABET[sum(int(d) for d in str(parsed.timestamp_ms)) % 64]
+    if expected != parsed.checksum:
         result.notes.append(
-            f"Checksum is {match.group('checksum')!r}, recomputed {expected!r}."
+            f"Checksum is {parsed.checksum!r}, recomputed {expected!r}."
         )
     return result
 
@@ -113,8 +158,7 @@ def describe(decoded: Decoded) -> str:
         tlv = decoded.tlv
         lines += [
             f"TLV: <b>{len(tlv)} bytes</b> (expected {TLV_LENGTH})",
-            f"HEAD ok: {'yes' if tlv.startswith(HEAD) else '<b>NO</b>'}",
-            f"TAIL ok: {'yes' if tlv.endswith(TAIL) else '<b>NO</b>'}",
+            f"HEAD ok: {'yes' if tlv.startswith(HEAD) else '<b>NO</b>'}",            f"TAIL ok: {'yes' if tlv.endswith(TAIL) else '<b>NO</b>'}",
             f"phone field [{PHONE_FIELD_START}:{PHONE_FIELD_END}]: "
             f"<code>{tlv[PHONE_FIELD_START:PHONE_FIELD_END].hex()}</code>",
             f"full TLV: <code>{tlv.hex()}</code>",

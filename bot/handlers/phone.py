@@ -16,7 +16,7 @@ from bot.services.validators import PROVIDER_LABELS, needs_padding_warning, vali
 from bot.services.wavepay_qr import wavepay_qr_string
 
 logger = logging.getLogger(__name__)
-router = Router()
+router = Router(name="phone")
 
 # These two handlers are catch-alls. In a group with privacy mode off they would
 # answer every message posted, so keep them to one-to-one chats; the commands in

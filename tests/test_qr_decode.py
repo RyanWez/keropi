@@ -52,6 +52,30 @@ def test_flags_an_unparseable_string():
     assert decoded.notes
 
 
+def test_finds_the_right_split_when_the_checksum_is_also_an_f():
+    """The separator is "F" and the checksum can be "F" too.
+
+    A greedy regex swallowed the separator in that case, leaving a 57-character
+    base64 body that would not decode. Timestamp 1788254777616 has a digit sum of
+    69, and 69 % 64 = 5, which is "F" in the base64 alphabet.
+    """
+    qr = kbzpay_qr_string("09123456789", ts_ms=1788254777616)
+    assert qr[56:58] == "FF", "this vector only exercises the bug if both are F"
+
+    decoded = decode_qr_string(qr)
+    assert decoded.phone_digits == "09123456789"
+    assert len(decoded.tlv) == 42
+    assert decoded.notes == []
+
+
+def test_finds_the_right_split_across_many_timestamps():
+    for offset in range(0, 4000, 137):
+        qr = kbzpay_qr_string("09123456789", ts_ms=1788254777618 + offset)
+        decoded = decode_qr_string(qr)
+        assert decoded.notes == [], f"failed on {qr}"
+        assert decoded.phone_digits == "09123456789"
+
+
 def test_describe_mentions_the_flag_for_a_short_sample():
     report = describe(decode_qr_string(kbzpay_qr_string("091234567")))
     assert "KBZPAY_ALLOW_SHORT_NUMBERS" in report

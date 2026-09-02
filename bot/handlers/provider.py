@@ -10,7 +10,7 @@ from bot.services.db import set_user_provider
 from bot.services.providers import Provider, parse_provider
 
 logger = logging.getLogger(__name__)
-router = Router()
+router = Router(name="provider")
 
 
 @router.callback_query(F.data.startswith(CALLBACK_PREFIX))

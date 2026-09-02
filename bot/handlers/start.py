@@ -7,7 +7,7 @@ from bot import texts
 from bot.keyboards.provider_kb import provider_keyboard
 from bot.services.providers import Provider
 
-router = Router()
+router = Router(name="start")
 
 
 @router.message(CommandStart())

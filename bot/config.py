@@ -64,6 +64,12 @@ THROTTLE_SECONDS = float(os.getenv("THROTTLE_SECONDS", "2") or 2)
 # answered without rendering or uploading again.
 QR_CACHE_SIZE = _int("QR_CACHE_SIZE", 2000)
 
+# Inline results can only reference a URL or a file_id — raw bytes are not accepted —
+# so a card must be uploaded somewhere before it can be offered inline. Point this at
+# a private channel or group the bot can post to. Unset disables inline mode, which
+# then falls back to a "open the bot" button.
+QR_CACHE_CHAT_ID = _int("QR_CACHE_CHAT_ID", 0)
+
 
 def setup_logging() -> None:
     fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")

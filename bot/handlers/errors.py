@@ -18,7 +18,7 @@ from bot import texts
 from bot.keyboards.provider_kb import provider_keyboard
 
 logger = logging.getLogger(__name__)
-router = Router()
+router = Router(name="errors")
 
 
 async def _notify(event: ErrorEvent) -> None:

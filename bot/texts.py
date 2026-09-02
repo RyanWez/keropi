@@ -46,6 +46,10 @@ ERROR_REPLY = (
 
 ERROR_ALERT = "Something went wrong. Please try again."
 
+INLINE_PROMPT = "Type a Myanmar mobile number, e.g. 09xxxxxxxxx"
+INLINE_BAD_NUMBER = "Not a Myanmar mobile number — tap to open the bot"
+INLINE_OPEN_BOT = "Open the bot"
+
 QR_CAPTION = (
     "📷 Scan with <b>{label}</b>\n"
     "Number: <code>{phone}</code>\n\n"
