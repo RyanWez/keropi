@@ -82,7 +82,7 @@ async def _result(
 
 @router.inline_query()
 async def inline_qr(query: InlineQuery) -> None:
-    open_bot = InlineQueryResultsButton(text=texts.INLINE_OPEN_BOT)
+    open_bot = InlineQueryResultsButton(text=texts.INLINE_OPEN_BOT, start_parameter="start")
 
     if config.QR_CACHE_CHAT_ID == 0:
         logger.warning("inline mode used but QR_CACHE_CHAT_ID is not set")
@@ -93,7 +93,7 @@ async def inline_qr(query: InlineQuery) -> None:
     if not text:
         await query.answer(
             [], cache_time=CACHE_TIME, is_personal=True,
-            button=InlineQueryResultsButton(text=texts.INLINE_PROMPT),
+            button=InlineQueryResultsButton(text=texts.INLINE_PROMPT, start_parameter="start"),
         )
         return
 
@@ -107,7 +107,7 @@ async def inline_qr(query: InlineQuery) -> None:
     if not accepted:
         await query.answer(
             [], cache_time=CACHE_TIME, is_personal=True,
-            button=InlineQueryResultsButton(text=texts.INLINE_BAD_NUMBER),
+            button=InlineQueryResultsButton(text=texts.INLINE_BAD_NUMBER, start_parameter="start"),
         )
         return
 

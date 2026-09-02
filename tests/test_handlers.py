@@ -13,8 +13,8 @@ import pytest
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.methods import SendMessage, SendPhoto
-from aiogram.types import BufferedInputFile, Chat, Message, PhotoSize, Update, User
+from aiogram.methods import AnswerInlineQuery, SendMessage, SendPhoto
+from aiogram.types import BufferedInputFile, Chat, InlineQuery, Message, PhotoSize, Update, User
 
 from bot.handlers import setup
 from bot.services import renderer
@@ -73,6 +73,10 @@ class RecordingBot:
     def sent_photos(self) -> list[SendPhoto]:
         return [c for c in self.calls if isinstance(c, SendPhoto)]
 
+    @property
+    def inline_answers(self) -> list[AnswerInlineQuery]:
+        return [c for c in self.calls if isinstance(c, AnswerInlineQuery)]
+
 
 def _message(message_id: int, **kwargs) -> Message:
     return Message(
@@ -86,6 +90,18 @@ def _message(message_id: int, **kwargs) -> Message:
 
 def _update(text: str, message_id: int = 1) -> Update:
     return Update(update_id=message_id, message=_message(message_id, text=text))
+
+
+def _inline_update(query: str, query_id: str = "q1", update_id: int = 10) -> Update:
+    return Update(
+        update_id=update_id,
+        inline_query=InlineQuery(
+            id=query_id,
+            from_user=User(id=USER_ID, is_bot=False, first_name="Tester"),
+            query=query,
+            offset="",
+        ),
+    )
 
 
 def _group_update(text: str, message_id: int) -> Update:
@@ -290,3 +306,31 @@ def test_a_rejected_file_id_falls_back_to_rendering(dispatcher, bot, monkeypatch
     assert stale.photo == "file-that-telegram-forgot"
     assert isinstance(fresh.photo, BufferedInputFile)
     assert cache.get(Provider.WAVEPAY, "09123456789") == "file-102"
+
+
+def test_inline_without_cache_chat_id_offers_open_bot(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.QR_CACHE_CHAT_ID", 0)
+    asyncio.run(dispatcher.feed_update(bot, _inline_update("09123456789")))
+    assert bot.inline_answers
+    answer = bot.inline_answers[0]
+    assert answer.button.text == "Open the bot"
+    assert answer.button.start_parameter == "start"
+
+
+def test_inline_empty_query_prompts_for_number(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.QR_CACHE_CHAT_ID", -100123)
+    asyncio.run(dispatcher.feed_update(bot, _inline_update("")))
+    assert bot.inline_answers
+    answer = bot.inline_answers[0]
+    assert "Myanmar mobile number" in answer.button.text
+    assert answer.button.start_parameter == "start"
+
+
+def test_inline_bad_number_shows_bad_number_button(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.QR_CACHE_CHAT_ID", -100123)
+    asyncio.run(dispatcher.feed_update(bot, _inline_update("invalid")))
+    assert bot.inline_answers
+    answer = bot.inline_answers[0]
+    assert "Not a Myanmar mobile number" in answer.button.text
+    assert answer.button.start_parameter == "start"
+
