@@ -40,13 +40,13 @@ MYANMAR_BOLD_CANDIDATES = (
 #: Myanmar block, plus the Extended-A and Extended-B ranges.
 _MYANMAR_RANGES = ((0x1000, 0x109F), (0xAA60, 0xAA7F), (0xA9E0, 0xA9FF))
 
-CARD_WIDTH = 900
-PADDING = 48
-GAP = 36
-TITLE_SIZE = 56
-NUMBER_SIZE = 40
-HINT_SIZE = 24
-ACCENT_BAR_HEIGHT = 10
+CARD_WIDTH = 400
+PADDING = 36
+GAP = 18
+TITLE_SIZE = 28
+NUMBER_SIZE = 22
+HINT_SIZE = 15
+ACCENT_BAR_HEIGHT = 6
 
 PROVIDER_STYLE = {
     Provider.KBZPAY: {
@@ -113,15 +113,15 @@ def render_qr_card(
     """Render the branded QR card and return PNG bytes."""
     style = PROVIDER_STYLE[provider]
 
-    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, box_size=12, border=2)
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_H, box_size=6, border=2)
     qr.add_data(payload)
     qr.make(fit=True)
     qr_img = qr.make_image(
         fill_color=style["qr_color"], back_color="white"
     ).convert("RGB")
-    # Short payloads (WavePay) produce tiny QRs — upscale to fill the card.
+    # Normalize QR to fill the card's target width comfortably.
     target = CARD_WIDTH - PADDING * 2
-    if qr_img.width < target:
+    if qr_img.width != target:
         qr_img = qr_img.resize((target, target), Image.NEAREST)
 
     title_font = _font(SANS_BOLD_CANDIDATES, TITLE_SIZE)
