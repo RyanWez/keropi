@@ -102,9 +102,9 @@ def _provider_logo(provider: Provider) -> Image.Image:
     return logo.crop(alpha_bounds)
 
 
-def _add_provider_logo(qr_img: Image.Image, provider: Provider) -> None:
-    """Place a compact logo over the QR while staying inside correction-H capacity."""
-    backing_size = max(1, round(qr_img.width * 0.21))
+@lru_cache(maxsize=len(Provider) * 2)
+def _provider_badge(provider: Provider, backing_size: int) -> Image.Image:
+    """Build the small QR-centre badge once for each provider and QR size."""
     logo_size = max(1, round(backing_size * 0.82))
     logo = _provider_logo(provider).copy()
     logo.thumbnail((logo_size, logo_size), Image.Resampling.LANCZOS)
@@ -119,7 +119,13 @@ def _add_provider_logo(qr_img: Image.Image, provider: Provider) -> None:
     logo_x = (backing_size - logo.width) // 2
     logo_y = (backing_size - logo.height) // 2
     backing.alpha_composite(logo, (logo_x, logo_y))
+    return backing
 
+
+def _add_provider_logo(qr_img: Image.Image, provider: Provider) -> None:
+    """Place a compact logo over the QR while staying inside correction-H capacity."""
+    backing_size = max(1, round(qr_img.width * 0.21))
+    backing = _provider_badge(provider, backing_size)
     x = (qr_img.width - backing_size) // 2
     y = (qr_img.height - backing_size) // 2
     qr_img.paste(backing, (x, y), backing)

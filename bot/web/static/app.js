@@ -287,6 +287,11 @@ function setTelegramVariable(name, value) {
   }
 }
 
+function telegramSupports(version) {
+  return typeof telegramApp?.isVersionAtLeast === "function"
+    && telegramApp.isVersionAtLeast(version);
+}
+
 function applyTelegramTheme() {
   if (!telegramApp) return;
   setTelegramVariable("color-scheme", telegramApp.colorScheme === "dark" ? "dark" : "light");
@@ -306,8 +311,12 @@ function applyTelegramTheme() {
   if (themeColor && typeof theme.bg_color === "string") {
     themeColor.setAttribute("content", theme.bg_color);
   }
-  telegramApp.setHeaderColor?.(theme.header_bg_color ?? "bg_color");
-  telegramApp.setBackgroundColor?.(theme.bg_color ?? "bg_color");
+  // Both methods arrived in Bot API 6.1. Older desktop clients log warnings
+  // instead of ignoring unsupported calls quietly, so gate them explicitly.
+  if (telegramSupports("6.1")) {
+    telegramApp.setHeaderColor?.(theme.header_bg_color ?? "bg_color");
+    telegramApp.setBackgroundColor?.(theme.bg_color ?? "bg_color");
+  }
 }
 
 function syncTelegramViewport() {

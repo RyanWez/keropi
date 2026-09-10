@@ -7,7 +7,12 @@ from PIL import Image
 
 from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.providers import Provider
-from bot.services.renderer import CARD_WIDTH, PROVIDER_STYLE, render_qr_card
+from bot.services.renderer import (
+    CARD_WIDTH,
+    PROVIDER_STYLE,
+    _provider_badge,
+    render_qr_card,
+)
 from bot.services.wavepay_qr import wavepay_qr_string
 
 zxingcpp = pytest.importorskip("zxingcpp", reason="zxing-cpp is a dev dependency")
@@ -47,6 +52,19 @@ def test_provider_logo_is_composited_into_the_qr_centre(provider):
     assert any(pixel != (255, 255, 255) and pixel[:3] != module for pixel in band), (
         "expected provider logo pixels at the QR centre"
     )
+
+
+def test_provider_badge_is_cached_after_first_resize():
+    _provider_badge.cache_clear()
+    first = _provider_badge(Provider.KBZPAY, 132)
+    after_first = _provider_badge.cache_info()
+    second = _provider_badge(Provider.KBZPAY, 132)
+    after_second = _provider_badge.cache_info()
+
+    assert second is first
+    assert after_first.misses == 1
+    assert after_second.misses == 1
+    assert after_second.hits == 1
 
 
 def test_wavepay_payload_is_the_bare_number():
