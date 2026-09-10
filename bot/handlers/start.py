@@ -1,10 +1,16 @@
 from aiogram import F, Router
+from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot import texts
-from bot.keyboards import error_keyboard, language_keyboard, provider_keyboard
+from bot.keyboards import (
+    error_keyboard,
+    language_keyboard,
+    provider_keyboard,
+    start_keyboard,
+)
 from bot.services.languages import Language
 from bot.services.providers import Provider
 
@@ -18,8 +24,16 @@ async def cmd_start(
     await state.update_data(lang=lang.value)
     if provider is not None:
         await state.update_data(provider=provider.value)
+    strings = texts.get(lang)
+    # Mini App buttons exist only in private chats between a user and the bot, so
+    # a /start echoed in a group gets the plain provider row.
     await message.reply(
-        texts.get(lang).WELCOME, reply_markup=provider_keyboard(active=provider)
+        strings.WELCOME,
+        reply_markup=start_keyboard(
+            strings.WEB_APP_LABEL,
+            active=provider,
+            with_web_app=message.chat.type == ChatType.PRIVATE,
+        ),
     )
 
 

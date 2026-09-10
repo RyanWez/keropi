@@ -33,6 +33,9 @@ class Strings:
     ERROR_ALERT: str
     COOLDOWN_NOTICE: str
     CONTACT_LABEL: str
+    #: Label for the Mini App button on /start and for the chat menu button
+    #: published at startup, which has no per-user language and uses the default.
+    WEB_APP_LABEL: str
     PROVIDER_ALREADY: str
     LANG_PROMPT: str
     LANG_CHANGED: str
@@ -147,6 +150,7 @@ EN = Strings(
     ERROR_ALERT="Something went wrong. Please try again.",
     COOLDOWN_NOTICE="⏳ One moment — please wait a couple of seconds between numbers.",
     CONTACT_LABEL="💬 Contact & Feedback",
+    WEB_APP_LABEL="🌐 Open Web App",
     PROVIDER_ALREADY="✅ {label} is already selected!",
     LANG_PROMPT="🌐 <b>Language</b>\n\nWhich language should I reply in? 👇",
     LANG_CHANGED=(
@@ -229,6 +233,7 @@ MY = Strings(
     ERROR_ALERT="တစ်ခုခု မှားယွင်းနေပါသည်။ ထပ်စမ်းကြည့်ပေးပါ။",
     COOLDOWN_NOTICE="⏳ ခဏစောင့်ပါ — နံပါတ်တစ်ခုနှင့် တစ်ခုကြား ၂ စက္ကန့်ခန့် ခြားပေးပါ။",
     CONTACT_LABEL="💬 ဆက်သွယ်ရန် / အကြံပြုရန်",
+    WEB_APP_LABEL="🌐 Web App ကို ဖွင့်ပါ",
     PROVIDER_ALREADY="✅ {label} ကို ရွေးထားပြီးသားပါ။",
     LANG_PROMPT="🌐 <b>ဘာသာစကား ရွေးချယ်ရန်</b>\n\nအသုံးပြုလိုသည့် ဘာသာစကားကို ရွေးပါ 👇",
     LANG_CHANGED=(

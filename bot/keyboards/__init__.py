@@ -1,11 +1,11 @@
 """Inline keyboards.
 
 Provider names are brands, so they read the same in every language; only the
-contact button's label is translated. The language buttons use endonyms, so a user
-who picked the wrong language can still find their way back.
+contact and Mini App buttons' labels are translated. The language buttons use
+endonyms, so a user who picked the wrong language can still find their way back.
 """
 
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot import config
@@ -35,6 +35,30 @@ def provider_keyboard(active: Provider | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     _add_providers(builder, active)
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def start_keyboard(
+    web_app_label: str,
+    active: Provider | None = None,
+    *,
+    with_web_app: bool = False,
+) -> InlineKeyboardMarkup:
+    """Keyboard for /start: the provider row, plus the Mini App when it can launch.
+
+    ``web_app`` buttons are only available in private chats between a user and the
+    bot, and only work if Telegram can reach an HTTPS URL, so the button appears
+    when the caller says the chat can host it (``with_web_app``) and ``WEB_APP_URL``
+    is configured. Without either this is just :func:`provider_keyboard` — no
+    button is better than one Telegram would refuse to send.
+    """
+    if not with_web_app or config.WEB_APP_URL is None:
+        return provider_keyboard(active)
+
+    builder = InlineKeyboardBuilder()
+    _add_providers(builder, active)
+    builder.button(text=web_app_label, web_app=WebAppInfo(url=config.WEB_APP_URL))
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 

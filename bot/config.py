@@ -24,12 +24,18 @@ def _int(name: str, default: int) -> int:
         return default
 
 
-def _button_url(name: str, default: str = "") -> str | None:
+def _button_url(
+    name: str, default: str = "", *, https_only: bool = False
+) -> str | None:
     """Validate a URL destined for an inline button, or return None.
 
     Telegram rejects the whole message if a button URL is malformed, and the
     messages carrying this one are error replies — the last place that should fail.
     So a bad value disables the button rather than breaking the reply.
+
+    ``https_only`` is for Mini App buttons: Telegram opens ``web_app`` URLs over
+    HTTPS, never plain http, so an http value is a misconfiguration rather than a
+    usable link.
     """
     raw = os.getenv(name)
     # An explicitly empty value means "no button"; only an unset one takes the default.
@@ -37,10 +43,14 @@ def _button_url(name: str, default: str = "") -> str | None:
     if not raw:
         return None
 
+    schemes = {"https"} if https_only else {"http", "https"}
     parsed = urlsplit(raw)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if parsed.scheme not in schemes or not parsed.hostname:
         logging.getLogger(__name__).warning(
-            "%s must be an http(s) URL with a host; ignoring %r", name, raw
+            "%s must be a %s URL with a host; ignoring %r",
+            name,
+            " or ".join(sorted(schemes)),
+            raw,
         )
         return None
 
@@ -112,6 +122,13 @@ QR_CACHE_CHAT_ID = _int("QR_CACHE_CHAT_ID", 0)
 # gone wrong is exactly when someone wants to reach a human, and the provider
 # buttons are no use to them. Set to empty to drop the button.
 CONTACT_URL = _button_url("CONTACT_URL", "https://t.me/Super001z")
+
+# The Telegram Mini App entry point: the web app's public HTTPS URL, normally the
+# same Render service root that already serves it. When set, /start in a private
+# chat gains an "Open Web App" button and startup publishes it as the chat menu
+# button. Unset or invalid disables both — Telegram only launches Mini Apps over
+# HTTPS, and a local or private-network URL is unreachable from the user's client.
+WEB_APP_URL = _button_url("WEB_APP_URL", https_only=True)
 
 
 def setup_logging() -> None:

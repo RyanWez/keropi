@@ -21,6 +21,11 @@ person's burst can't slow it down for everybody else.
 - **Web app** — the Render service root hosts a responsive English/Myanmar generator
   with QR preview, PNG download and native sharing on supported devices. Provider and
   language preferences stay in the browser; phone numbers and QR history do not.
+- **Telegram Mini App** — with `WEB_APP_URL` set, `/start` in a private chat gets an
+  "Open Web App" button under the provider row, and the bot publishes the same launch
+  as the chat menu button at startup. Unset or invalid config disables both, and
+  clearing the URL removes a stale menu button (see
+  [Registering the Mini App](#registering-the-mini-app-botfather)).
 - **Inline mode** — `@yourbot 09xxxxxxxxx` from inside any chat returns both
   providers as pickable results, no need to open the bot first.
 - **Repeat numbers are free** — once a card has been sent, Telegram will re-send it
@@ -151,6 +156,7 @@ alongside the web server, so the existing UptimeRobot check on `/health` remains
 | `OWNER_ID` | unset | Telegram user id allowed to run `/decode`. |
 | `QR_CACHE_CHAT_ID` | unset | Chat to upload cards to for inline mode. Unset disables inline mode. |
 | `CONTACT_URL` | `https://t.me/Super001z` | Target of the contact button on error replies. Empty drops the button. |
+| `WEB_APP_URL` | unset | Public HTTPS URL of the Telegram Mini App. Enables the `/start` web app button and the startup menu button. Unset or invalid (plain http, localhost, private addresses) disables both. |
 | `KBZPAY_ALLOW_SHORT_NUMBERS` | `false` | Allow 9/10-digit KBZ Pay numbers with unverified padding. |
 | `RENDER_WORKERS` | `3` | Threads for card rendering. |
 | `MAX_CONCURRENT_UPDATES` | `24` | Ceiling on updates in flight. |
@@ -180,6 +186,25 @@ Two things to watch when the language is not written in Latin script:
   Burmese line. `tests/test_card_text.py` fails if you forget.
 - Everything else goes through Telegram, which renders any script, so message copy
   is unconstrained.
+
+### Registering the Mini App (BotFather)
+
+The bot serves the Mini App itself: with `WEB_APP_URL` set to this service's public
+HTTPS root, `/start` in a private chat gains an **Open Web App** button and startup
+publishes the same launch as the chat menu button. No BotFather step is required for
+those two entry points.
+
+Registering the app in @BotFather is optional and only needed for the bot *profile's*
+own launch button and for shareable `t.me/<bot>/<short_name>` links:
+
+1. `/newapp` in @BotFather, choosing the bot.
+2. Title, description, and photo as prompted.
+3. Web App URL: this service's public HTTPS root, e.g.
+   `https://keropi-bot.onrender.com/`.
+4. Short name for the direct link, e.g. `payqr`.
+
+That registration is a manual, one-time step; the Bot API can set the chat menu button
+but has no call that creates a Main Mini App.
 
 ---
 
