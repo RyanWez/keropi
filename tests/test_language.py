@@ -179,6 +179,17 @@ def test_commands_reply_in_the_chosen_language(dispatcher, bot, command, field):
     assert bot.texts == [getattr(MY, field)]
 
 
+def test_the_web_app_button_is_labelled_in_the_chosen_language(
+    dispatcher, bot, monkeypatch
+):
+    """The Mini App row on /start is user-facing copy like any other."""
+    monkeypatch.setattr("bot.config.WEB_APP_URL", "https://keropi-bot.onrender.com/")
+    db.set_user_lang(USER_ID, "my")
+    _feed(dispatcher, bot, _text_update("/start"))
+
+    assert bot.keyboards == [[["KBZ Pay", "WavePay"], [MY.WEB_APP_LABEL]]]
+
+
 def test_a_rejected_number_explains_itself_in_myanmar(dispatcher, bot):
     db.set_user_lang(USER_ID, "my")
     db.set_user_provider(USER_ID, Provider.KBZPAY.value)

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _Seen:
     last_handled: float
-    last_warned: float = 0.0
+    warned: bool = False
 
 
 class ThrottleMiddleware(BaseMiddleware):
@@ -36,11 +36,20 @@ class ThrottleMiddleware(BaseMiddleware):
 
     The user is told once per window; further updates in the same window are
     dropped silently so a held-down send key cannot turn into a reply storm.
+
+    ``clock`` is injectable for deterministic tests; production keeps the
+    default monotonic reading.
     """
 
-    def __init__(self, cooldown: float = 2.0, capacity: int = 10_000) -> None:
+    def __init__(
+        self,
+        cooldown: float = 2.0,
+        capacity: int = 10_000,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.cooldown = cooldown
         self.capacity = capacity
+        self._clock = clock
         self._seen: OrderedDict[int, _Seen] = OrderedDict()
 
     def _remember(self, user_id: int, entry: _Seen) -> None:
@@ -59,14 +68,16 @@ class ThrottleMiddleware(BaseMiddleware):
         if user is None:
             return await handler(event, data)
 
-        now = time.monotonic()
+        now = self._clock()
         entry = self._seen.get(user.id)
         if entry is None or now - entry.last_handled >= self.cooldown:
+            # A new cooldown window starts here, so the one-per-window notice
+            # is rearmed alongside it.
             self._remember(user.id, _Seen(last_handled=now))
             return await handler(event, data)
 
-        if now - entry.last_warned >= self.cooldown:
-            entry.last_warned = now
+        if not entry.warned:
+            entry.warned = True
             await self._notify(event, user)
         self._seen.move_to_end(user.id)
         logger.debug("throttled user %s", user.id)

@@ -14,6 +14,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "111111:test-token-not-real")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+# Pin the Mini App off so keyboard assertions don't depend on a developer's own
+# .env; tests that care set bot.config.WEB_APP_URL (or the env var) explicitly.
+os.environ.setdefault("WEB_APP_URL", "")
 
 import pytest  # noqa: E402
 from aiogram import Dispatcher  # noqa: E402

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.methods import SendMessage
-from aiogram.types import Chat, Message, TelegramObject, Update, User
+from aiogram.types import Chat, Message, Update, User
 
 from bot.middlewares.retry_after import RetryAfterMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
@@ -43,15 +43,45 @@ def _data(user_id: int) -> dict:
     return {"event_from_user": User(id=user_id, is_bot=False, first_name="T")}
 
 
+class _Clock:
+    """A manually advanced monotonic clock that starts at zero.
+
+    A real time.monotonic() reading is unrelated to any test's timeline; a fake
+    clock at zero also pins down the old sentinel bug, where warned=0.0 collided
+    with the clock's own origin.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _warn_recorder(mw: ThrottleMiddleware) -> list:
+    notices: list = []
+
+    async def record(event, _user):
+        notices.append(event)
+
+    mw._notify = record
+    return notices
+
+
 def test_throttle_lets_the_first_update_through():
-    mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
     result = asyncio.run(mw(handler, _update(1), _data(1)))
     assert result == "handled"
     assert handler.calls == 1
 
 
 def test_throttle_drops_a_burst_from_one_user():
-    mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
 
     async def burst():
         return [await mw(handler, _update(1), _data(1)) for _ in range(5)]
@@ -63,24 +93,21 @@ def test_throttle_drops_a_burst_from_one_user():
 
 def test_throttle_warns_once_then_stays_quiet():
     """A held-down send key must not turn into a reply storm."""
-    mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
-    notices: list[TelegramObject] = []
-
-    async def record(event, _user):
-        notices.append(event)
-
-    mw._notify = record
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
+    notices = _warn_recorder(mw)
 
     async def burst():
         for _ in range(5):
             await mw(handler, _update(1), _data(1))
 
     asyncio.run(burst())
-    assert len(notices) == 1
+    assert len(notices) == 1, "the first throttled update must warn exactly once"
 
 
 def test_throttle_is_per_user():
-    mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
 
     async def two_users():
         await mw(handler, _update(1), _data(1))
@@ -90,20 +117,47 @@ def test_throttle_is_per_user():
     assert handler.calls == 2, "one busy user must not block anybody else"
 
 
-def test_throttle_releases_after_the_cooldown():
-    mw, handler = ThrottleMiddleware(cooldown=0.05), _Counter()
+def test_throttle_blocks_just_before_the_boundary():
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
+    notices = _warn_recorder(mw)
 
-    async def wait_it_out():
-        await mw(handler, _update(1), _data(1))
-        await asyncio.sleep(0.06)
+    async def run():
+        await mw(handler, _update(1), _data(1))  # window opens at t=0
+        clock.advance(59.999)  # a hair short of the cooldown
         await mw(handler, _update(1), _data(1))
 
-    asyncio.run(wait_it_out())
+    asyncio.run(run())
+    assert handler.calls == 1, "still inside the window; the update must be dropped"
+    assert len(notices) == 1
+
+
+def test_throttle_opens_a_new_window_at_the_exact_boundary():
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
+    notices = _warn_recorder(mw)
+
+    async def run():
+        await mw(handler, _update(1), _data(1))  # window 1 opens at t=0
+        await mw(handler, _update(1), _data(1))  # throttled, warns once
+        clock.advance(59.999)
+        await mw(handler, _update(1), _data(1))  # silent within window 1
+        clock.advance(0.001)  # exactly t=60: the boundary is inclusive
+        await mw(handler, _update(1), _data(1))  # accepted, window 2 opens
+        await mw(handler, _update(1), _data(1))  # throttled again, must warn again
+
+    asyncio.run(run())
     assert handler.calls == 2
+    assert clock.now == 60.0
+    assert len(notices) == 2, "the notice is rearmed for the new window"
 
 
 def test_throttle_memory_is_bounded():
-    mw, handler = ThrottleMiddleware(cooldown=60, capacity=10), _Counter()
+    clock = _Clock()
+    mw, handler = (
+        ThrottleMiddleware(cooldown=60, capacity=10, clock=clock),
+        _Counter(),
+    )
 
     async def many_users():
         for user_id in range(50):
@@ -114,7 +168,8 @@ def test_throttle_memory_is_bounded():
 
 
 def test_throttle_ignores_events_without_a_user():
-    mw, handler = ThrottleMiddleware(cooldown=60), _Counter()
+    clock = _Clock()
+    mw, handler = ThrottleMiddleware(cooldown=60, clock=clock), _Counter()
     asyncio.run(mw(handler, _update(1), {}))
     asyncio.run(mw(handler, _update(1), {}))
     assert handler.calls == 2

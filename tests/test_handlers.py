@@ -170,6 +170,30 @@ def test_start_offers_both_providers(dispatcher, bot):
     (sent,) = bot.calls
     assert isinstance(sent, SendMessage)
     assert _rows(sent.reply_markup) == [["KBZ Pay", "WavePay"]]
+    # conftest pins WEB_APP_URL empty, so no Mini App button by default.
+    assert all(b.web_app is None for row in sent.reply_markup.inline_keyboard for b in row)
+
+
+def test_start_adds_the_web_app_under_the_providers(dispatcher, bot, monkeypatch):
+    monkeypatch.setattr("bot.config.WEB_APP_URL", "https://keropi-bot.onrender.com/")
+    _feed(dispatcher, bot, "/start")
+
+    (sent,) = bot.calls
+    assert _rows(sent.reply_markup) == [["KBZ Pay", "WavePay"], [EN.WEB_APP_LABEL]]
+    (button,) = sent.reply_markup.inline_keyboard[1]
+    assert button.web_app.url == "https://keropi-bot.onrender.com/"
+    assert button.url is None, "a web_app button must not carry a plain url too"
+
+
+def test_a_group_start_keeps_the_web_app_out(dispatcher, bot, monkeypatch):
+    """Telegram only supports web_app buttons in private chats with the bot."""
+    monkeypatch.setattr("bot.config.WEB_APP_URL", "https://keropi-bot.onrender.com/")
+    asyncio.run(dispatcher.feed_update(bot, _group_update("/start", 9)))
+
+    assert bot.sent_texts, "a group /start still answers"
+    sent = bot.calls[0]
+    assert _rows(sent.reply_markup) == [["KBZ Pay", "WavePay"]]
+    assert all(b.web_app is None for row in sent.reply_markup.inline_keyboard for b in row)
 
 
 def test_number_without_a_provider_asks_for_one(dispatcher, bot):
@@ -282,7 +306,7 @@ def test_the_error_handler_replies_when_a_handler_explodes(
     def boom(*_args, **_kwargs):
         raise RuntimeError("expect_error: renderer exploded")
 
-    monkeypatch.setattr("bot.handlers.phone.render_qr_card_async", boom)
+    monkeypatch.setattr("bot.services.qr_generator.render_qr_card_async", boom)
     _feed(dispatcher, bot, "09123456789")
 
     assert not bot.sent_photos
