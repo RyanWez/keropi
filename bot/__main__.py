@@ -5,7 +5,13 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.types import (
+    BotCommand,
+    MenuButton,
+    MenuButtonDefault,
+    MenuButtonWebApp,
+    WebAppInfo,
+)
 
 from bot import config, texts
 from bot.handlers import setup
@@ -45,6 +51,28 @@ async def publish_commands(bot: Bot) -> None:
         await bot.set_my_commands(commands, language_code=language.value)
 
 
+async def publish_menu_button(bot: Bot) -> None:
+    """Point the bot's default menu button at the Mini App, or clear a stale one.
+
+    Setting it once without a chat_id changes the default for every private chat,
+    instead of one call per user. When ``WEB_APP_URL`` is unset or invalid the
+    button would otherwise linger from an earlier deploy, so the default is
+    restored. This is a convenience, not a precondition: a refusal is logged and
+    polling still starts.
+    """
+    if config.WEB_APP_URL is not None:
+        button: MenuButton = MenuButtonWebApp(
+            text=texts.get(DEFAULT_LANGUAGE).WEB_APP_LABEL,
+            web_app=WebAppInfo(url=config.WEB_APP_URL),
+        )
+    else:
+        button = MenuButtonDefault()
+    try:
+        await bot.set_chat_menu_button(menu_button=button)
+    except Exception as exc:
+        logger.warning("could not publish the menu button: %s", exc)
+
+
 async def main() -> None:
     config.setup_logging()
     bot = Bot(
@@ -60,6 +88,9 @@ async def main() -> None:
         await publish_commands(bot)
     except Exception as exc:
         logger.warning("could not publish bot commands: %s", exc)
+    # Best-effort by design: publish_menu_button swallows its own failures, so a
+    # refused menu button never stops the bot from polling.
+    await publish_menu_button(bot)
 
     runner = None
     try:
