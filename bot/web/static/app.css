@@ -327,12 +327,6 @@ label {
   object-fit: contain;
 }
 
-/* The supplied Wave PNG carries wide transparent margins, so its visible badge
-   renders smaller than KBZ's at the same box size. Scale to match. */
-.provider-icon-wave {
-  transform: scale(1.42);
-}
-
 .provider-content strong,
 .provider-content small {
   display: block;

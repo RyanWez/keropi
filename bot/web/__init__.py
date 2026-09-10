@@ -82,17 +82,23 @@ async def security_headers(request: web.Request, handler):
             "Content-Security-Policy": (
                 "default-src 'self'; img-src 'self' blob:; "
                 "style-src 'self'; "
+                # The SDK publishes Telegram theme variables as style attributes
+                # and injects its consent helper as a style element. Keep that
+                # exception scoped to CSS; scripts remain strict and nonce-free.
+                "style-src-elem 'self' 'unsafe-inline'; "
+                "style-src-attr 'unsafe-inline'; "
                 # Telegram Mini Apps need the official SDK script; this is the
                 # only external source the page may ever load.
                 "script-src 'self' https://telegram.org; "
                 "connect-src 'self'; base-uri 'none'; form-action 'self'; "
-                "frame-ancestors 'none'"
+                # Telegram Web hosts Mini Apps in an iframe. Restrict embedding
+                # to Telegram-controlled HTTPS origins instead of allowing all.
+                "frame-ancestors https://telegram.org https://*.telegram.org"
             ),
             "Cross-Origin-Opener-Policy": "same-origin",
             "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
         }
     )
     return response

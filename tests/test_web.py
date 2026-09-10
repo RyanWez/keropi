@@ -26,7 +26,7 @@ def test_home_serves_the_web_app_with_security_headers():
         assert response.content_type == "text/html"
         assert "Keropi Pay QR" in body
         assert 'id="qr-form"' in body
-        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "X-Frame-Options" not in response.headers
         assert "default-src 'self'" in response.headers["Content-Security-Policy"]
 
     run_request(check)
@@ -54,7 +54,8 @@ def test_provider_logos_are_served(name):
         assert response.content_type == "image/png"
         image = Image.open(BytesIO(body))
         assert image.format == "PNG"
-        assert image.width > 100 and image.height > 100
+        assert 100 < image.width <= 512
+        assert 100 < image.height <= 512
 
     run_request(check)
 
@@ -189,18 +190,33 @@ def test_csp_grants_only_self_plus_telegram_org_and_keeps_restrictions():
             csp = response.headers["Content-Security-Policy"]
             directives = _csp_directives(csp)
             assert directives["script-src"] == {"'self'", "https://telegram.org"}
+            assert directives["style-src"] == {"'self'"}
+            assert directives["style-src-elem"] == {"'self'", "'unsafe-inline'"}
+            assert directives["style-src-attr"] == {"'unsafe-inline'"}
             assert directives["default-src"] == {"'self'"}
             assert directives["img-src"] == {"'self'", "blob:"}
             assert directives["connect-src"] == {"'self'"}
-            assert directives["frame-ancestors"] == {"'none'"}
+            assert directives["frame-ancestors"] == {
+                "https://telegram.org",
+                "https://*.telegram.org",
+            }
             assert directives["base-uri"] == {"'none'"}
             assert directives["form-action"] == {"'self'"}
-            allowed = {"'self'", "'none'", "blob:", "https://telegram.org"}
+            allowed = {
+                "'self'",
+                "'none'",
+                "'unsafe-inline'",
+                "blob:",
+                "https://telegram.org",
+                "https://*.telegram.org",
+            }
             for name, sources in directives.items():
                 assert sources <= allowed, f"{name} references an outside source"
-            assert "unsafe-inline" not in csp
+            assert "'unsafe-inline'" not in directives["script-src"]
             assert "unsafe-eval" not in csp
-            assert response.headers["X-Frame-Options"] == "DENY"
+            # X-Frame-Options cannot express a Telegram-only allowlist and
+            # would override the CSP in older clients.
+            assert "X-Frame-Options" not in response.headers
             assert response.headers["X-Content-Type-Options"] == "nosniff"
 
     run_request(check)
@@ -219,6 +235,8 @@ def test_app_js_is_telegram_mini_app_ready_with_browser_fallback():
         assert javascript.rstrip().endswith("initTelegramApp();")
         # Theme, viewport height and safe areas react to Telegram data/events.
         assert "themeParams" in javascript
+        assert 'telegramSupports("6.1")' in javascript
+        assert "isVersionAtLeast" in javascript
         assert "themeChanged" in javascript
         assert "viewportChanged" in javascript
         assert "safeAreaChanged" in javascript
