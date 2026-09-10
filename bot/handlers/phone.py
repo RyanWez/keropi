@@ -8,13 +8,15 @@ from aiogram.types import BufferedInputFile, Message
 
 from bot import texts
 from bot.keyboards import error_keyboard, provider_keyboard
-from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.languages import Language
 from bot.services.providers import Provider
 from bot.services.qr_cache import cache
-from bot.services.renderer import render_qr_card_async
-from bot.services.validators import PROVIDER_LABELS, needs_padding_warning, validate
-from bot.services.wavepay_qr import wavepay_qr_string
+from bot.services.qr_generator import (
+    PhoneValidationError,
+    prepare_qr,
+    render_prepared_qr,
+)
+from bot.services.validators import PROVIDER_LABELS
 
 logger = logging.getLogger(__name__)
 router = Router(name="phone")
@@ -23,12 +25,6 @@ router = Router(name="phone")
 # answer every message posted, so keep them to one-to-one chats; the commands in
 # start.py still work anywhere.
 router.message.filter(F.chat.type == ChatType.PRIVATE)
-
-
-def build_payload(provider: Provider, phone: str) -> str:
-    if provider is Provider.KBZPAY:
-        return kbzpay_qr_string(phone)
-    return wavepay_qr_string(phone)
 
 
 @router.message(F.text)
@@ -43,26 +39,24 @@ async def phone_to_qr(
     # Keep FSM state in sync so the next update skips the database lookup.
     await state.update_data(provider=provider.value, lang=lang.value)
 
-    check = validate(message.text or "", provider)
-    if not check.ok:
+    try:
+        prepared = prepare_qr(provider, message.text or "", lang)
+    except PhoneValidationError as exc:
         await message.reply(
-            strings.phone_error(check),
+            strings.phone_error(exc.check),
             reply_markup=error_keyboard(
                 strings.CONTACT_LABEL,
                 provider,
-                offer_providers=texts.offers_provider_switch(check),
+                offer_providers=texts.offers_provider_switch(exc.check),
             ),
         )
         return
 
-    phone = check.phone
-    warning = (
-        strings.PADDING_WARNING if needs_padding_warning(provider, phone) else None
-    )
+    phone = prepared.phone
     caption = strings.QR_CAPTION.format(label=PROVIDER_LABELS[provider], phone=phone)
     keyboard = provider_keyboard(active=provider)
 
-    cached = cache.get(provider, phone, warning)
+    cached = cache.get(provider, phone, prepared.warning)
     if cached is not None:
         try:
             await message.reply_photo(cached, caption=caption, reply_markup=keyboard)
@@ -70,10 +64,9 @@ async def phone_to_qr(
         except TelegramBadRequest:
             # A file_id Telegram no longer accepts. Drop it and render afresh.
             logger.warning("stale file_id for %s (%s)", phone, provider.value)
-            cache.discard(provider, phone, warning)
+            cache.discard(provider, phone, prepared.warning)
 
-    payload = build_payload(provider, phone)
-    png = await render_qr_card_async(provider, phone, payload, warning=warning)
+    png = await render_prepared_qr(prepared)
     logger.info(
         "user %s: QR for %s (%s)",
         message.from_user.id if message.from_user else "unknown",
@@ -82,12 +75,12 @@ async def phone_to_qr(
     )
 
     sent = await message.reply_photo(
-        BufferedInputFile(png, filename=f"{provider.value}_{phone}.png"),
+        BufferedInputFile(png, filename=prepared.filename),
         caption=caption,
         reply_markup=keyboard,
     )
     if sent.photo:
-        cache.put(provider, phone, sent.photo[-1].file_id, warning)
+        cache.put(provider, phone, sent.photo[-1].file_id, prepared.warning)
 
 
 @router.message()

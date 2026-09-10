@@ -1,8 +1,8 @@
-# Keropi — Myanmar Pay QR Bot (KBZ Pay & WavePay) 🇲🇲
+# Keropi — Myanmar Pay QR Bot & Web App (KBZ Pay / WavePay) 🇲🇲
 
-A Telegram bot that turns a customer's phone number into a scannable payment QR
-code for **KBZ Pay** and **WavePay**, so nobody has to retype a number into a
-transfer screen.
+A Telegram bot and mobile-friendly web app that turn a customer's phone number into
+a scannable payment QR code for **KBZ Pay** and **WavePay**, so nobody has to retype
+a number into a transfer screen.
 
 Anyone may use it, in English or Myanmar. There is a short per-user cooldown so one
 person's burst can't slow it down for everybody else.
@@ -15,8 +15,12 @@ person's burst can't slow it down for everybody else.
   number, timestamp and checksum), reverse-engineered from KBZPay 5.8.5.
 - **WavePay** — WavePay reads a bare phone number, so the payload is the number.
 - **Branded cards** — white background, KBZ blue (`#0066B3`) or Wave amber
-  (`#D98200`) for scanner contrast, with the recipient's number printed underneath
-  so a typo is obvious before anyone taps send.
+  (`#D98200`) for scanner contrast, the provider's logo centred inside the QR on a
+  small white badge, and the recipient's number printed underneath so a typo is
+  obvious before anyone taps send.
+- **Web app** — the Render service root hosts a responsive English/Myanmar generator
+  with QR preview, PNG download and native sharing on supported devices. Provider and
+  language preferences stay in the browser; phone numbers and QR history do not.
 - **Inline mode** — `@yourbot 09xxxxxxxxx` from inside any chat returns both
   providers as pickable results, no need to open the bot first.
 - **Repeat numbers are free** — once a card has been sent, Telegram will re-send it
@@ -68,6 +72,7 @@ keropi/
 │   ├── config.py                   # env parsing, logging
 │   ├── texts.py                    # every user-facing string, one record per language
 │   ├── assets/fonts/               # vendored DejaVu + Noto Sans Myanmar
+│   ├── web/                          # aiohttp UI, JSON API and static assets
 │   ├── handlers/
 │   │   ├── errors.py               # catch-all error handler
 │   │   ├── diagnostics.py          # owner-only /decode
@@ -112,8 +117,28 @@ cp .env.example .env               # then paste your @BotFather token
 python -m bot
 ```
 
-Long polling, so no webhook, domain or certificate is needed. Logs go to the
-console and to `bot.log`, rotating at 1 MB with three backups.
+Long polling, so no webhook or certificate is needed. When `PORT` is set, the same
+process serves the web app and `/health`; Render supplies `PORT` automatically. Logs
+go to the console and to `bot.log`, rotating at 1 MB with three backups.
+
+### Web app and API
+
+Open the service's `https://<service-name>.onrender.com` URL to use the browser
+interface. It supports KBZ Pay and WavePay, English and Myanmar, QR preview, PNG
+download, and native sharing where the browser provides it. Only provider and language
+preferences are kept in browser storage; phone numbers and generated images are not
+stored as history.
+
+The UI calls `POST /api/qr` with JSON:
+
+```json
+{"provider": "kbzpay", "phone": "09123456789", "language": "en"}
+```
+
+A valid request returns `image/png`. Invalid requests return a structured JSON error.
+The endpoint has a 1 KiB body limit, per-client request limiting, bounded rendering,
+privacy-safe logs, and `Cache-Control: no-store`. Telegram continues using long polling
+alongside the web server, so the existing UptimeRobot check on `/health` remains valid.
 
 ### Configuration
 
@@ -241,8 +266,9 @@ or run `.venv/bin/python -m bot` directly.
 
 ## 🔒 Security & privacy
 
-- Everything is generated locally. The bot moves no money and touches no bank
-  account.
+- Everything is generated locally. The bot and web app move no money and touch no bank
+  account. The web app stores only provider/language preferences in the browser and
+  deliberately keeps no phone-number or QR history.
 - It cannot tell whether an account exists. **Always check the recipient's name on
   the payment app's confirmation screen before authorising a transfer** — that name
   is the last safety net against a mistyped number.

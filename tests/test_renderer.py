@@ -7,7 +7,7 @@ from PIL import Image
 
 from bot.services.kbzpay_qr import kbzpay_qr_string
 from bot.services.providers import Provider
-from bot.services.renderer import CARD_WIDTH, render_qr_card
+from bot.services.renderer import CARD_WIDTH, PROVIDER_STYLE, render_qr_card
 from bot.services.wavepay_qr import wavepay_qr_string
 
 zxingcpp = pytest.importorskip("zxingcpp", reason="zxing-cpp is a dev dependency")
@@ -29,6 +29,24 @@ def test_rendered_card_scans_back_to_the_payload(provider):
         else wavepay_qr_string(PHONE)
     )
     assert _decode(render_qr_card(provider, PHONE, payload)) == payload
+
+
+@pytest.mark.parametrize("provider", list(Provider))
+def test_provider_logo_is_composited_into_the_qr_centre(provider):
+    payload = (
+        kbzpay_qr_string(PHONE)
+        if provider is Provider.KBZPAY
+        else wavepay_qr_string(PHONE)
+    )
+    image = Image.open(io.BytesIO(render_qr_card(provider, PHONE, payload)))
+    # The QR occupies the middle of the card; sample a band across its centre and
+    # require a colour that is neither the white backing nor the QR module colour.
+    centre_y = image.height // 2
+    band = [image.getpixel((x, centre_y)) for x in range(image.width // 4, image.width * 3 // 4)]
+    module = (*PROVIDER_STYLE[provider]["qr_color"],)
+    assert any(pixel != (255, 255, 255) and pixel[:3] != module for pixel in band), (
+        "expected provider logo pixels at the QR centre"
+    )
 
 
 def test_wavepay_payload_is_the_bare_number():

@@ -26,6 +26,10 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["bot*"]
 
+[tool.setuptools.package-data]
+"bot" = ["assets/fonts/*.ttf", "assets/fonts/*.txt", "assets/images/*.png"]
+"bot.web" = ["index.html", "static/*.css", "static/*.js"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

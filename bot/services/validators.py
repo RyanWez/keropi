@@ -27,8 +27,12 @@ VALID_LENGTHS = (9, 10, 11)
 #: KBZPay's BCD field holds exactly this many digits.
 KBZPAY_REQUIRED_LENGTH = 11
 
+#: Input-safety ceiling, not a claim about KBZPay's transaction limit.
+MAX_AMOUNT_MMK = 999_999_999
+
 _SEPARATORS_RE = re.compile(r"[\s\-()./]+")
 _ASCII_DIGITS_RE = re.compile(r"[0-9]+")
+_GROUPED_AMOUNT_RE = re.compile(r"[1-9][0-9]{0,2}(?:,[0-9]{3})+")
 
 PROVIDER_LABELS = {Provider.KBZPAY: "KBZ Pay", Provider.WAVEPAY: "WavePay"}
 
@@ -38,6 +42,24 @@ class Reason(str, Enum):
     NOT_DIGITS = "not_digits"
     NOT_MYANMAR_MOBILE = "not_myanmar_mobile"
     KBZPAY_NEEDS_11 = "kbzpay_needs_11"
+
+
+class AmountReason(str, Enum):
+    NOT_INTEGER = "amount_not_integer"
+    LEADING_ZERO = "amount_leading_zero"
+    TOO_SMALL = "amount_too_small"
+    TOO_LARGE = "amount_too_large"
+    NOT_SUPPORTED = "amount_not_supported"
+
+
+@dataclass(frozen=True, slots=True)
+class AmountCheck:
+    amount: int | None = None
+    reason: AmountReason | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.reason is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +146,29 @@ def validate(raw: str, provider: Provider) -> PhoneCheck:
             return PhoneCheck(reason=Reason.KBZPAY_NEEDS_11, digits=len(phone))
 
     return PhoneCheck(phone=phone, digits=len(phone))
+
+
+def validate_amount(raw: str | None, provider: Provider) -> AmountCheck:
+    """Validate an optional whole-MMK amount without using floating point."""
+    if raw is None or not raw.strip():
+        return AmountCheck()
+    if provider is not Provider.KBZPAY:
+        return AmountCheck(reason=AmountReason.NOT_SUPPORTED)
+
+    text = raw.strip()
+    if not (_ASCII_DIGITS_RE.fullmatch(text) or _GROUPED_AMOUNT_RE.fullmatch(text)):
+        return AmountCheck(reason=AmountReason.NOT_INTEGER)
+
+    digits = text.replace(",", "")
+    if len(digits) > 1 and digits.startswith("0"):
+        return AmountCheck(reason=AmountReason.LEADING_ZERO)
+
+    amount = int(digits)
+    if amount < 1:
+        return AmountCheck(reason=AmountReason.TOO_SMALL)
+    if amount > MAX_AMOUNT_MMK:
+        return AmountCheck(reason=AmountReason.TOO_LARGE)
+    return AmountCheck(amount=amount)
 
 
 def needs_padding_warning(provider: Provider, phone: str) -> bool:

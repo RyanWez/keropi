@@ -282,7 +282,7 @@ def test_the_error_handler_replies_when_a_handler_explodes(
     def boom(*_args, **_kwargs):
         raise RuntimeError("expect_error: renderer exploded")
 
-    monkeypatch.setattr("bot.handlers.phone.render_qr_card_async", boom)
+    monkeypatch.setattr("bot.services.qr_generator.render_qr_card_async", boom)
     _feed(dispatcher, bot, "09123456789")
 
     assert not bot.sent_photos
