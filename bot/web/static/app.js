@@ -77,6 +77,8 @@ const copy = {
   },
 };
 
+const telegramApp = window.Telegram?.WebApp ?? null;
+
 const form = document.querySelector("#qr-form");
 const phoneInput = document.querySelector("#phone");
 const clearPhoneButton = document.querySelector("#clear-phone");
@@ -96,7 +98,7 @@ const downloadButton = document.querySelector("#download-button");
 const shareButton = document.querySelector("#share-button");
 const closeResult = document.querySelector("#close-result");
 
-let language = readPreference("keropi-language", "en");
+let language = readPreference("keropi-language", "") || telegramLanguageHint() || "en";
 let amountExpanded = false;
 let imageBlob = null;
 let imageUrl = null;
@@ -118,7 +120,17 @@ function storePreference(key, value) {
   }
 }
 
-function setLanguage(nextLanguage) {
+function telegramLanguageHint() {
+  // initDataUnsafe is only ever read here, and only for the client language,
+  // as a presentation hint for first-time visitors. No identity data leaves
+  // the page or reaches storage.
+  const code = telegramApp?.initDataUnsafe?.user?.language_code;
+  if (typeof code !== "string") return null;
+  const primary = code.toLowerCase().split(/[-_]/, 1)[0];
+  return copy[primary] ? primary : null;
+}
+
+function setLanguage(nextLanguage, persist = true) {
   language = copy[nextLanguage] ? nextLanguage : "en";
   document.documentElement.lang = language;
   document.querySelectorAll("[data-i18n]").forEach((element) => {
@@ -138,7 +150,7 @@ function setLanguage(nextLanguage) {
   preview.alt = copy[language].previewAlt;
   closeResult.setAttribute("aria-label", copy[language].closePreview);
   updateAmountControls();
-  storePreference("keropi-language", language);
+  if (persist) storePreference("keropi-language", language);
 }
 
 function selectedProvider() {
@@ -269,6 +281,70 @@ async function shareImage() {
   setStatus(copy[language].copied, true);
 }
 
+function setTelegramVariable(name, value) {
+  if (value !== null && value !== undefined) {
+    document.documentElement.style.setProperty(name, value);
+  }
+}
+
+function applyTelegramTheme() {
+  if (!telegramApp) return;
+  setTelegramVariable("color-scheme", telegramApp.colorScheme === "dark" ? "dark" : "light");
+  const theme = telegramApp.themeParams ?? {};
+  const accents = {
+    "--ink": theme.text_color,
+    "--muted": theme.hint_color,
+    "--canvas": theme.bg_color,
+    "--surface": theme.secondary_bg_color ?? theme.section_bg_color,
+    "--green": theme.button_color,
+    "--green-dark": theme.button_color,
+  };
+  for (const [property, value] of Object.entries(accents)) {
+    if (typeof value === "string") setTelegramVariable(property, value);
+  }
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor && typeof theme.bg_color === "string") {
+    themeColor.setAttribute("content", theme.bg_color);
+  }
+  telegramApp.setHeaderColor?.(theme.header_bg_color ?? "bg_color");
+  telegramApp.setBackgroundColor?.(theme.bg_color ?? "bg_color");
+}
+
+function syncTelegramViewport() {
+  if (!telegramApp) return;
+  const height = telegramApp.viewportHeight ?? telegramApp.screenHeight;
+  if (Number.isFinite(height)) {
+    setTelegramVariable("--telegram-viewport-height", `${height}px`);
+  }
+}
+
+function syncTelegramInsets() {
+  if (!telegramApp) return;
+  // Prefer the content safe area; fall back to the plain safe area. Both are
+  // combined with env() in CSS so non-Telegram browsers keep working.
+  const insets = telegramApp.contentSafeAreaInset ?? telegramApp.safeAreaInset;
+  if (!insets) return;
+  for (const side of ["top", "right", "bottom", "left"]) {
+    if (Number.isFinite(insets[side])) {
+      setTelegramVariable(`--telegram-safe-inset-${side}`, `${insets[side]}px`);
+    }
+  }
+}
+
+function initTelegramApp() {
+  if (!telegramApp) return; // Plain browser: the CSS fallbacks apply unchanged.
+  document.documentElement.classList.add("is-telegram-app");
+  applyTelegramTheme();
+  syncTelegramViewport();
+  syncTelegramInsets();
+  telegramApp.onEvent?.("themeChanged", applyTelegramTheme);
+  telegramApp.onEvent?.("viewportChanged", syncTelegramViewport);
+  telegramApp.onEvent?.("safeAreaChanged", syncTelegramInsets);
+  telegramApp.onEvent?.("contentSafeAreaChanged", syncTelegramInsets);
+  telegramApp.ready();
+  telegramApp.expand();
+}
+
 form.addEventListener("submit", generateQr);
 phoneInput.addEventListener("input", updateClearPhoneButton);
 clearPhoneButton.addEventListener("click", () => {
@@ -310,4 +386,5 @@ const savedProviderInput = document.querySelector(`input[name="provider"][value=
 if (savedProviderInput) savedProviderInput.checked = true;
 if (!navigator.share) shareButton.hidden = true;
 updateClearPhoneButton();
-setLanguage(language);
+setLanguage(language, false);
+initTelegramApp();

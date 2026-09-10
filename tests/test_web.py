@@ -156,3 +156,91 @@ def test_api_limits_request_body_size():
         assert response.status == 413
 
     run_request(check)
+
+
+def _csp_directives(header: str) -> dict[str, set[str]]:
+    directives = {}
+    for part in header.split(";"):
+        tokens = part.split()
+        if tokens:
+            directives[tokens[0]] = set(tokens[1:])
+    return directives
+
+
+def test_index_loads_the_official_telegram_sdk_before_app_js():
+    async def check(client):
+        response = await client.get("/")
+        body = await response.text()
+        assert response.status == 200
+        assert 'src="https://telegram.org/js/telegram-web-app.js"' in body
+        assert body.index("telegram.org/js/telegram-web-app.js") < body.index(
+            'src="/static/app.js"'
+        )
+        # viewport-fit=cover lets the layout see the OS safe-area insets.
+        assert "viewport-fit=cover" in body
+
+    run_request(check)
+
+
+def test_csp_grants_only_self_plus_telegram_org_and_keeps_restrictions():
+    async def check(client):
+        for path in ("/", "/static/app.js", "/static/app.css"):
+            response = await client.get(path)
+            csp = response.headers["Content-Security-Policy"]
+            directives = _csp_directives(csp)
+            assert directives["script-src"] == {"'self'", "https://telegram.org"}
+            assert directives["default-src"] == {"'self'"}
+            assert directives["img-src"] == {"'self'", "blob:"}
+            assert directives["connect-src"] == {"'self'"}
+            assert directives["frame-ancestors"] == {"'none'"}
+            assert directives["base-uri"] == {"'none'"}
+            assert directives["form-action"] == {"'self'"}
+            allowed = {"'self'", "'none'", "blob:", "https://telegram.org"}
+            for name, sources in directives.items():
+                assert sources <= allowed, f"{name} references an outside source"
+            assert "unsafe-inline" not in csp
+            assert "unsafe-eval" not in csp
+            assert response.headers["X-Frame-Options"] == "DENY"
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+    run_request(check)
+
+
+def test_app_js_is_telegram_mini_app_ready_with_browser_fallback():
+    async def check(client):
+        response = await client.get("/static/app.js")
+        javascript = await response.text()
+        # Feature detection: a plain browser must keep working untouched.
+        assert "window.Telegram?.WebApp" in javascript
+        assert "if (!telegramApp) return;" in javascript
+        assert "telegramApp.ready()" in javascript
+        assert "telegramApp.expand()" in javascript
+        # ready()/expand() run after the UI has been initialised.
+        assert javascript.rstrip().endswith("initTelegramApp();")
+        # Theme, viewport height and safe areas react to Telegram data/events.
+        assert "themeParams" in javascript
+        assert "themeChanged" in javascript
+        assert "viewportChanged" in javascript
+        assert "safeAreaChanged" in javascript
+        assert "contentSafeAreaChanged" in javascript
+        assert "--telegram-viewport-height" in javascript
+        assert "--telegram-safe-inset-" in javascript
+        # initDataUnsafe is only used as a language presentation hint.
+        assert "initDataUnsafe?.user?.language_code" in javascript
+        # The API request body must not carry any Telegram data.
+        assert "JSON.stringify({ provider, phone: phoneInput.value, amount, language })" in javascript
+
+    run_request(check)
+
+
+def test_app_css_adapts_safe_area_and_viewport_with_fallbacks():
+    async def check(client):
+        response = await client.get("/static/app.css")
+        css = await response.text()
+        assert css.count("--safe-area-top: 0px;") == 1
+        assert css.count("env(safe-area-inset-top)") >= 1
+        assert "max(env(safe-area-inset-top), var(--telegram-safe-inset-top, 0px))" in css
+        assert "max(env(safe-area-inset-bottom), var(--telegram-safe-inset-bottom, 0px))" in css
+        assert "var(--telegram-viewport-height, 100dvh)" in css
+
+    run_request(check)

@@ -81,7 +81,10 @@ async def security_headers(request: web.Request, handler):
         {
             "Content-Security-Policy": (
                 "default-src 'self'; img-src 'self' blob:; "
-                "style-src 'self'; script-src 'self'; "
+                "style-src 'self'; "
+                # Telegram Mini Apps need the official SDK script; this is the
+                # only external source the page may ever load.
+                "script-src 'self' https://telegram.org; "
                 "connect-src 'self'; base-uri 'none'; form-action 'self'; "
                 "frame-ancestors 'none'"
             ),
